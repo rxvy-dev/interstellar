@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.interstellar.Terminal</id>
+  <name>Interstellar Terminal</name>
+  <summary>A terminal that's out of this world</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <launchable type="desktop-id">io.github.interstellar.Terminal.desktop</launchable>
+  <description>
+    <p>Interstellar is a fast GTK 4 terminal with tabs, split panes, an animated starfield and a GUI for every option.</p>
+    <ul>
+      <li>25 built-in themes, a theme studio, and import from kitty, Alacritty and base16</li>
+      <li>Splits, pane zoom, broadcast input, session restore</li>
+      <li>Command palette, quick select hints, clickable links and file:line errors</li>
+      <li>Safe paste, notifications for long commands, a drop-down (quake) mode</li>
+    </ul>
+  </description>
+  <url type="homepage">https://github.com/rxvy-dev/interstellar</url>
+  <provides><binary>interstellar</binary></provides>
+  <releases><release version="1.0.0" date="2026-10-10"/></releases>
+  <content_rating type="oars-1.1"/>
+</component>

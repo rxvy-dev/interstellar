@@ -1,0 +1,22 @@
+# Template file for 'interstellar'  (void-packages: copy this folder to srcpkgs/interstellar, then ./xbps-src pkg interstellar)
+pkgname=interstellar
+version=1.0.0
+revision=1
+build_style=gnu-makefile
+make_install_args="PREFIX=/usr"
+depends="python3 python3-gobject python3-cairo gtk4 vte3-gtk4"
+short_desc="Terminal emulator with tabs, splits, themes, starfield and GUI customization"
+maintainer="rxvy <rxvy@users.noreply.github.com>"
+license="MIT"
+homepage="https://github.com/rxvy-dev/interstellar"
+distfiles="https://github.com/rxvy-dev/interstellar/archive/refs/tags/v${version}.tar.gz"
+checksum=SKIP_REPLACE_WITH_SHA256
+archs=noarch
+
+do_build() {
+	:
+}
+
+post_install() {
+	vlicense LICENSE
+}

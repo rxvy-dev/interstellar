@@ -1,0 +1,61 @@
+#!/bin/sh
+# Interstellar Terminal launcher. Works from the source tree or an install.
+#   interstellar                    open a window (restores your last session)
+#   interstellar -e htop            run a command
+#   interstellar -d ~/code --tab    open a tab in the running window
+#   interstellar --quake            toggle the drop-down terminal (bind this to a key, e.g. F12)
+#   interstellar --doctor           check that everything is installed
+#   interstellar --fetch            space-themed system info (also: istl fetch)
+#   interstellar --update / --uninstall / --version / --help
+HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+PY="$INTERSTELLAR_PYTHON"
+if [ -z "$PY" ]; then
+  for c in /usr/bin/python3 "$(command -v python3 2>/dev/null)" /usr/bin/python3.14 /usr/bin/python3.13 /usr/bin/python3.12 \
+           /usr/bin/python3.11 /usr/bin/python3.10 /usr/bin/python3.9 /usr/local/bin/python3; do
+    if [ -n "$c" ] && [ -x "$c" ] && "$c" -c 'import gi' 2>/dev/null; then PY="$c"; break; fi
+  done
+  [ -z "$PY" ] && PY="$(command -v python3 2>/dev/null)"
+fi
+if [ -z "$PY" ]; then echo "interstellar: python3 not found" >&2; exit 1; fi
+
+# Wayland drop-down terminal needs gtk4-layer-shell loaded before libwayland.
+if [ -n "$WAYLAND_DISPLAY" ] && [ -z "$INTERSTELLAR_NO_LAYER_SHELL" ]; then
+  case "$LD_PRELOAD" in *gtk4-layer-shell*) ;; *)
+    for l in /usr/lib/libgtk4-layer-shell.so /usr/lib64/libgtk4-layer-shell.so /usr/lib/*/libgtk4-layer-shell.so \
+             /usr/local/lib/libgtk4-layer-shell.so /usr/local/lib/*/libgtk4-layer-shell.so; do
+      if [ -e "$l" ]; then export LD_PRELOAD="$l${LD_PRELOAD:+:$LD_PRELOAD}"; break; fi
+    done ;;
+  esac
+fi
+
+for d in "$HERE/.." "$HERE/../share/interstellar" "$HOME/.local/share/interstellar" /usr/local/share/interstellar \
+         /usr/share/interstellar /usr/lib/interstellar /opt/interstellar; do
+  if [ -d "$d/interstellar" ]; then
+    case "$1" in
+      --doctor|--check) exec "$PY" -c "import sys; sys.path.insert(0, '$d'); from interstellar.doctor import main; sys.exit(main())" ;;
+      --fetch|fetch)   exec "$PY" -c "import sys; sys.path.insert(0, '$d'); from interstellar.fetch import main; sys.exit(main())" ;;
+      --version|-v)     exec "$PY" -c "import sys; sys.path.insert(0, '$d'); import interstellar; print('Interstellar Terminal', interstellar.VERSION)" ;;
+      --update)
+        REPO=$(sed -n 's/^REPO = "\([^"]*\)".*/\1/p' "$d/interstellar/__init__.py")
+        echo "Updating Interstellar from github.com/${REPO:-rxvy-dev/interstellar}…"
+        if command -v curl >/dev/null; then curl -fsSL "https://raw.githubusercontent.com/${REPO:-rxvy-dev/interstellar}/main/get.sh" | INTERSTELLAR_REPO="$REPO" bash -s -- -y
+        else wget -qO- "https://raw.githubusercontent.com/${REPO:-rxvy-dev/interstellar}/main/get.sh" | INTERSTELLAR_REPO="$REPO" bash -s -- -y; fi
+        exit $? ;;
+      --uninstall)
+        SRC="${XDG_DATA_HOME:-$HOME/.local/share}/interstellar-src"
+        if [ -x "$SRC/install.sh" ]; then exec "$SRC/install.sh" --uninstall; fi
+        P="$(cd "$d/../.." 2>/dev/null && pwd)"
+        S=""; [ -w "$P/bin" ] || S=sudo
+        $S rm -rf "$P/share/interstellar" "$P/bin/interstellar" "$P/bin/istl" \
+                  "$P/share/applications/io.github.interstellar.Terminal.desktop" \
+                  "$P/share/metainfo/io.github.interstellar.Terminal.metainfo.xml" "$P/share/licenses/interstellar"
+        $S find "$P/share/icons/hicolor" -name 'interstellar*' -delete 2>/dev/null
+        echo "Interstellar removed (settings kept in ~/.config/interstellar)."; exit 0 ;;
+      --help|-h)
+        sed -n '3,9p' "$0" | sed 's/^# *//'; echo
+        exec "$PY" -c "import sys; sys.path.insert(0, '$d'); from interstellar.app import parse_args; parse_args(['--help'])" ;;
+    esac
+    exec "$PY" -c "import sys; sys.path.insert(0, '$d'); from interstellar.app import main; sys.exit(main(['interstellar'] + sys.argv[1:]))" "$@"
+  fi
+done
+echo "interstellar: cannot find its files" >&2; exit 1

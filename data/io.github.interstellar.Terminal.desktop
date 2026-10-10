@@ -1,0 +1,29 @@
+[Desktop Entry]
+Type=Application
+Name=Interstellar Terminal
+GenericName=Terminal
+Comment=A terminal that's out of this world — tabs, splits, themes and a starfield
+Exec=interstellar
+TryExec=interstellar
+Icon=interstellar
+Terminal=false
+Categories=System;TerminalEmulator;GTK;
+Keywords=terminal;shell;console;command;prompt;cli;tty;space;
+StartupNotify=true
+StartupWMClass=io.github.interstellar.Terminal
+X-ExecArg=-e
+X-TerminalArgExec=-e
+X-TerminalArgDir=--working-directory=
+Actions=new-window;quake;preferences;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=interstellar --no-restore
+
+[Desktop Action quake]
+Name=Drop-down Terminal
+Exec=interstellar --quake
+
+[Desktop Action preferences]
+Name=Preferences
+Exec=interstellar --preferences

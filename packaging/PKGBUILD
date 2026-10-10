@@ -1,0 +1,22 @@
+# Maintainer: rxvy <https://github.com/rxvy-dev>
+# Build:  make dist && cp dist/interstellar-1.0.0.tar.gz packaging/ && cd packaging && makepkg -si
+pkgname=interstellar
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="A terminal that's out of this world: tabs, splits, themes, starfield, GUI customization"
+arch=('any')
+url="https://github.com/rxvy-dev/interstellar"
+license=('MIT')
+depends=('python' 'python-gobject' 'python-cairo' 'gtk4' 'vte4')
+optdepends=('ttf-jetbrains-mono: the default font'
+            'gtk4-layer-shell: drop-down terminal on Wayland'
+            'xdotool: drop-down terminal on X11'
+            'wmctrl: keep the drop-down terminal on top on X11')
+provides=('istl')
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+  cd "$srcdir/$pkgname-$pkgver"
+  make DESTDIR="$pkgdir" PREFIX=/usr install
+}
