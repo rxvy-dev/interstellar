@@ -23,9 +23,7 @@ DEFAULTS = {
     "background_dim": 0.65,
     "ui_style": "glass",           # glass | solid | minimal | liquid
     # Liquid Glass (ui_style "liquid", or any Liquid theme) — ranges live in liquid.GLASS_KEYS
-    "glass_mode": "wallpaper",     # wallpaper: refract what's behind (wallpaper + windows) | live: see-through
-    "glass_windows": True,         # refract the windows behind too (Hyprland, needs python-pywayland)
-    "glass_fps": 10,               # how often the windows behind are re-captured, per second
+    "glass_mode": "live",          # live: see the windows behind | wallpaper: refract the wallpaper
     "glass_quality": "balanced",   # fast | balanced | best (wallpaper mode blur samples)
     "glass_frost": 0.5,            # wallpaper-mode blur
     "glass_refraction": 1.0,       # how hard the curved rim bends the backdrop

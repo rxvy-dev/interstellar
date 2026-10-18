@@ -33,12 +33,10 @@ GLASS_KEYS = {
     "glass_grain": (0.3, 0.0, 1.0),        # fine noise
     "glass_radius": (16, 0, 40),           # corner radius, px
     "glass_shadow": (0.5, 0.0, 1.0),       # drop shadow under the window (floating windows)
-    "glass_fps": (10, 2, 30),              # how often the windows behind are re-captured, per second
 }
 GLASS_DEFAULTS = {k: v[0] for k, v in GLASS_KEYS.items()}
 GLASS_DEFAULTS.update({
-    "glass_mode": "wallpaper",             # wallpaper: refract what's behind (wallpaper + windows) | live: plain see-through
-    "glass_windows": True,                 # refraction mode: capture the windows behind too (Hyprland + pywayland)
+    "glass_mode": "live",                  # live: see the windows behind (compositor blur) | wallpaper: refract it
     "glass_quality": "balanced",           # fast | balanced | best (blur samples per pixel, wallpaper mode)
     "glass_tone": "auto",                  # auto | dark | light
     "glass_wallpaper": "",                 # "" = detect from swww / awww / hyprpaper / waypaper / swaybg
@@ -81,7 +79,7 @@ def _rgbf(h):
 
 
 def is_live(s):
-    return (s["glass_mode"] or "wallpaper") == "live"
+    return (s["glass_mode"] or "live") != "wallpaper"
 
 
 def shader_params(s, theme, maximized=False):
@@ -126,8 +124,7 @@ FRAGMENT = """
 out vec4 fragColor;
 
 uniform sampler2D src;
-uniform float hasTex;      // 1 once the backdrop texture is uploaded
-uniform float bgra;        // 1 when the texture holds cairo-ordered (B,G,R,A) pixels: the live window captures
+uniform float hasTex;      // 1 once the wallpaper texture is uploaded
 uniform float live;        // 1 = see-through: translucent glass over the compositor's blur of the windows behind
 uniform float opacity;     // see-through: alpha of the glass body
 uniform vec2  glassSize;   // the glass slab (= the widget), logical px
@@ -159,8 +156,7 @@ const float GOLDEN = 2.39996323;
 
 vec3 backdropLod(vec2 p, float lod) {
     vec2 uv = (p + srcOffset) / srcSize;
-    vec3 c = textureLod(src, clamp(uv, vec2(0.001), vec2(0.999)), lod).rgb;
-    return bgra > 0.5 ? c.bgr : c;
+    return textureLod(src, clamp(uv, vec2(0.001), vec2(0.999)), lod).rgb;
 }
 
 float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
