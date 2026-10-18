@@ -39,6 +39,7 @@ class Backdrop(Gtk.DrawingArea):
         self._img = None
         self._img_path = None
         self.paused = False
+        self.liquid = False      # Liquid Glass draws the window; we only add stars on top of it
         self.set_draw_func(self._draw)
         self._make_stars()
         self.connect("map", lambda *_: self._sync_anim())
@@ -57,6 +58,16 @@ class Backdrop(Gtk.DrawingArea):
         self._sync_anim()
         self.queue_draw()
 
+    def set_liquid(self, on):
+        if on != self.liquid:
+            self.liquid = on
+            self._cache = None
+            self._sync_anim()
+            self.queue_draw()
+
+    def _stars_on(self):
+        return self.s["starfield"] and (not self.liquid or self.s["glass_stars"])
+
     def set_paused(self, paused):
         self.paused = paused
         self._sync_anim()
@@ -73,7 +84,7 @@ class Backdrop(Gtk.DrawingArea):
                                r.choice(STAR_TINTS)])
 
     def _animated(self):
-        return (self.s["starfield"] and self.s["starfield_motion"] != "still" and not self.paused
+        return (self._stars_on() and self.s["starfield_motion"] != "still" and not self.paused
                 and self.get_mapped())
 
     def _sync_anim(self):
@@ -156,19 +167,25 @@ class Backdrop(Gtk.DrawingArea):
         return surf
 
     def _draw(self, area, cr, w, h):
-        base = self._base(w, h)
-        if base is None:
-            return
-        cr.set_operator(cairo.OPERATOR_SOURCE)
-        cr.set_source_surface(base, 0, 0)
-        cr.paint()
-        cr.set_operator(cairo.OPERATOR_OVER)
-        if not self.s["starfield"]:
-            return
+        if self.liquid:
+            if self.theme is None or not self._stars_on():
+                return
+        else:
+            base = self._base(w, h)
+            if base is None:
+                return
+            cr.set_operator(cairo.OPERATOR_SOURCE)
+            cr.set_source_surface(base, 0, 0)
+            cr.paint()
+            cr.set_operator(cairo.OPERATOR_OVER)
+            if not self.s["starfield"]:
+                return
         t = time.monotonic() - self.t0
         motion = self.s["starfield_motion"]
         light = self.theme and _lum(self.theme["bg"]) > 0.5
         op = max(0.2, float(self.s["opacity"] or 1.0))
+        if self.liquid:
+            op = 0.7      # stars drift inside the glass, a little softer
         for x, y, size, br, layer, ph, sp, tint in self.stars:
             if motion == "drift":
                 x = (x - t * (0.0016, 0.0042, 0.0095)[layer]) % 1.0

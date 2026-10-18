@@ -1,14 +1,14 @@
 """Preferences: every option has a GUI control and applies live to all open windows.
 
 Pages: Themes (gallery, hover to preview) · Theme Studio (edit / import / export) · Text & Cursor ·
-Space & Window (starfield, background image, opacity, UI style) · Tabs · Behaviour · Profiles · Keys · Advanced
+Space & Window (starfield, background image, opacity, UI style) · Liquid Glass (blur, refraction, light…) · Tabs · Behaviour · Profiles · Keys · Advanced
 """
 import copy, json, math, os, random
 
 import cairo
 from gi.repository import Gtk, Gdk, Gio, GLib, Pango
 
-from . import themes, keys, icons, NAME, VERSION
+from . import themes, keys, icons, liquid, NAME, VERSION
 from .chrome import _rgb
 from .pane import FALLBACK_FONTS
 from .settings import CFG_DIR, CFG_FILE, DEFAULTS
@@ -18,6 +18,7 @@ PAGES = [
     ("studio", "Theme Studio", "brush"),
     ("text", "Text & Cursor", "prompt"),
     ("space", "Space & Window", "sparkle"),
+    ("glass", "Liquid Glass", "glass"),
     ("tabs", "Tabs", "tab"),
     ("behaviour", "Behaviour", "bolt"),
     ("profiles", "Profiles", "profile"),
@@ -39,8 +40,11 @@ def draw_theme_preview(cr, w, h, th, radius=10, stars=True):
     cr.arc(r, h - r, r, math.pi / 2, math.pi); cr.arc(r, r, r, math.pi, 1.5 * math.pi)
     cr.close_path()
     cr.clip()
-    cr.set_source_rgb(*rgb(th["bg"]))
-    cr.paint()
+    if th.get("liquid"):
+        _draw_glass_tile(cr, w, h, th, r)
+    else:
+        cr.set_source_rgb(*rgb(th["bg"]))
+        cr.paint()
     if stars and th.get("space"):
         rnd = random.Random(th["name"])
         ar = rgb(th["accent"])
@@ -87,6 +91,49 @@ def draw_theme_preview(cr, w, h, th, radius=10, stars=True):
         cr.rectangle(10 + i * sw, h - 10, sw, 4)
         cr.fill()
     cr.restore()
+
+
+def _draw_glass_tile(cr, w, h, th, r):
+    """Liquid themes: a glass pane over a colourful backdrop."""
+    pal = th["palette"]
+    dark = themes.luminance(th["bg"]) < 0.5
+    cr.set_source_rgb(*[c * (0.55 if dark else 1.0) for c in rgb(th["bg"])])
+    cr.paint()
+    for x, y, rad, col in ((0.15, 0.2, 0.7, th["accent"]), (0.9, 0.25, 0.6, pal[5]), (0.6, 1.0, 0.7, pal[6])):
+        g = cairo.RadialGradient(x * w, y * h, 0, x * w, y * h, rad * w)
+        g.add_color_stop_rgba(0, *rgb(col), 0.75 if dark else 0.4)
+        g.add_color_stop_rgba(1, *rgb(col), 0)
+        cr.set_source(g)
+        cr.paint()
+    inset = 3
+    cr.new_sub_path()
+    rr = max(r - inset, 2)
+    x0, y0, x1, y1 = inset, inset, w - inset, h - inset
+    cr.arc(x1 - rr, y0 + rr, rr, -math.pi / 2, 0); cr.arc(x1 - rr, y1 - rr, rr, 0, math.pi / 2)
+    cr.arc(x0 + rr, y1 - rr, rr, math.pi / 2, math.pi); cr.arc(x0 + rr, y0 + rr, rr, math.pi, 1.5 * math.pi)
+    cr.close_path()
+    cr.set_source_rgba(*rgb(th["bg"]), 0.42)
+    cr.fill_preserve()
+    g = cairo.LinearGradient(0, 0, w, h)
+    g.add_color_stop_rgba(0, 1, 1, 1, 0.75)
+    g.add_color_stop_rgba(0.5, 1, 1, 1, 0.12)
+    g.add_color_stop_rgba(1, 1, 1, 1, 0.45)
+    cr.set_source(g)
+    cr.set_line_width(1.2)
+    cr.stroke()
+
+
+GLASS_PRESETS = [
+    ("crystal", "Crystal", {"glass_frost": 0.12, "glass_refraction": 1.7, "glass_edge": 32, "glass_dispersion": 1.8,
+                            "glass_tint": 0.32, "glass_vibrancy": 1.45, "glass_rim": 1.0, "glass_lens": 0.45}),
+    ("liquid", "Liquid", {k: liquid.GLASS_DEFAULTS[k] for k in ("glass_frost", "glass_refraction", "glass_edge",
+                                                                "glass_dispersion", "glass_tint", "glass_vibrancy",
+                                                                "glass_rim", "glass_lens")}),
+    ("frosted", "Frosted", {"glass_frost": 0.9, "glass_refraction": 0.6, "glass_edge": 22, "glass_dispersion": 0.5,
+                            "glass_tint": 0.55, "glass_vibrancy": 1.1, "glass_rim": 0.5, "glass_lens": 0.1}),
+    ("smoked", "Smoked", {"glass_frost": 0.7, "glass_refraction": 1.0, "glass_edge": 26, "glass_dispersion": 0.8,
+                          "glass_tint": 0.78, "glass_vibrancy": 0.9, "glass_rim": 0.6, "glass_lens": 0.2}),
+]
 
 
 class Prefs(Gtk.Window):
@@ -292,11 +339,11 @@ class Prefs(Gtk.Window):
     # ------------------------------------------------------------------ pages
     def _page_themes(self):
         pg = self._page("Themes", "Hover a theme to preview it on your open terminals, click to keep it. "
-                        "✦ marks the space originals.")
+                        "✦ marks the space originals, ◈ the Liquid Glass themes.")
         bar = Gtk.Box(spacing=8, margin_bottom=8)
         filt = Gtk.SearchEntry(placeholder_text="Filter themes", width_chars=18)
         bar.append(filt)
-        kind = Gtk.DropDown.new_from_strings(["All", "✦ Space", "Dark", "Light", "Custom"])
+        kind = Gtk.DropDown.new_from_strings(["All", "✦ Space", "Dark", "Light", "Custom", "◈ Liquid Glass"])
         bar.append(kind)
         bar.append(Gtk.Box(hexpand=True))
         imp = icons.button("plus", label="Import theme…")
@@ -320,7 +367,7 @@ class Prefs(Gtk.Window):
             da = Gtk.DrawingArea(content_width=170, content_height=100)
             da.set_draw_func(lambda a, cr, w, h, t=th: draw_theme_preview(cr, w, h, t))
             v.append(da)
-            name = ("✦ " if th.get("space") else "") + th["name"]
+            name = ("◈ " if th.get("liquid") else "✦ " if th.get("space") else "") + th["name"]
             v.append(Gtk.Label(label=name, ellipsize=3))
             b.set_child(v)
             b.connect("clicked", lambda _b, n=th["name"]: self._pick_theme(n))
@@ -337,7 +384,8 @@ class Prefs(Gtk.Window):
             for child, th in tiles:
                 light = themes.luminance(th["bg"]) > 0.5
                 ok = q in th["name"].lower() and (k == 0 or (k == 1 and th.get("space")) or (k == 2 and not light)
-                                                   or (k == 3 and light) or (k == 4 and th.get("custom")))
+                                                   or (k == 3 and light) or (k == 4 and th.get("custom"))
+                                                   or (k == 5 and th.get("liquid")))
                 child.set_visible(ok)
         filt.connect("search-changed", refilter)
         kind.connect("notify::selected", refilter)
@@ -643,9 +691,114 @@ class Prefs(Gtk.Window):
         self._row(c, "space", "Window opacity", "See your desktop through the terminal (needs a compositor).",
                   self._scale("opacity", 0.3, 1.0, 0.01, 2, fmt=lambda v: f"{int(v * 100)}%"))
         c = self._group(pg, "Window style")
-        self._row(c, "space", "UI style", "Glass: translucent bars · Solid: classic · Minimal: flat and quiet.",
-                  self._segmented("ui_style", [("glass", "Glass"), ("solid", "Solid"), ("minimal", "Minimal")]))
+        self._row(c, "space", "UI style", "Glass: translucent bars · Solid: classic · Minimal: flat and quiet · "
+                  "Liquid Glass: the whole window is curved glass over your wallpaper.",
+                  self._segmented("ui_style", [("glass", "Glass"), ("solid", "Solid"), ("minimal", "Minimal"),
+                                               ("liquid", "Liquid Glass")]))
         return pg
+
+    # ---------------------------------------------------------------- liquid glass
+    def _page_glass(self):
+        pg = self._page("Liquid Glass", "The window becomes a slab of curved glass that bends and frosts your wallpaper, "
+                        "lit along its rim. Pick a ◈ Liquid theme, or switch any theme to it here. Every slider "
+                        "applies live.")
+        pct = lambda v: f"{int(round(v * 100))}%"  # noqa: E731
+        times = lambda v: f"{v:.1f}×"  # noqa: E731
+        px = lambda v: f"{int(v)} px"  # noqa: E731
+
+        c = self._group(pg, "Liquid Glass")
+        th = themes.get(self.s["theme"])
+        sw = Gtk.Switch(active=self.s["ui_style"] == "liquid")
+        sw.connect("notify::active", lambda w, _p: self.s.__setitem__("ui_style", "liquid" if w.get_active() else "glass"))
+        note = " It's on now because your theme is a Liquid theme." if th.get("liquid") else ""
+        self._row(c, "glass", "Use Liquid Glass with any theme",
+                  "Same as UI style → Liquid Glass. The theme's background colour becomes the glass tint." + note, sw)
+        self._row(c, "glass", "Preset", "A starting point. Fine-tune with the sliders below.", self._glass_presets())
+        self._row(c, "glass", "Glass tone", "Dark or light glass. Auto follows the theme.",
+                  self._segmented("glass_tone", [("auto", "Auto"), ("dark", "Dark"), ("light", "Light")]))
+
+        c = self._group(pg, "Glass")
+        self._row(c, "glass", "Frost (blur)", "How much the wallpaper behind the glass is blurred.",
+                  self._scale("glass_frost", 0.0, 1.0, 0.01, 2, fmt=pct))
+        self._row(c, "glass", "Refraction", "How strongly the curved edge bends what's behind it.",
+                  self._scale("glass_refraction", 0.0, 3.0, 0.05, 2, fmt=times))
+        self._row(c, "glass", "Edge width", "How far in from the border the glass curves.",
+                  self._scale("glass_edge", 6, 80, 1, 0, fmt=px))
+        self._row(c, "glass", "Chromatic dispersion", "The rainbow fringe where light splits at the rim.",
+                  self._scale("glass_dispersion", 0.0, 4.0, 0.05, 2, fmt=times))
+        self._row(c, "glass", "Lens", "Magnifies the backdrop through the whole pane, like a thick lens.",
+                  self._scale("glass_lens", 0.0, 1.0, 0.01, 2, fmt=pct))
+
+        c = self._group(pg, "Colour & light")
+        self._row(c, "glass", "Tint", "The theme's background colour laid over the glass. Higher reads easier.",
+                  self._scale("glass_tint", 0.0, 1.0, 0.01, 2, fmt=pct))
+        self._row(c, "glass", "Vibrancy", "Saturation of the colours seen through the glass.",
+                  self._scale("glass_vibrancy", 0.0, 2.5, 0.05, 2, fmt=times))
+        self._row(c, "glass", "Rim light", "The specular highlight running along the edge.",
+                  self._scale("glass_rim", 0.0, 2.0, 0.05, 2, fmt=times))
+        self._row(c, "glass", "Grain", "Fine texture over the glass.",
+                  self._scale("glass_grain", 0.0, 1.0, 0.01, 2, fmt=pct))
+        self._row(c, "glass", "Stars on the glass", "Keep the starfield drifting inside the glass.",
+                  self._switch("glass_stars"))
+
+        c = self._group(pg, "Shape")
+        self._row(c, "glass", "Corner radius", "Match your compositor's rounding (Hyprland: decoration:rounding).",
+                  self._scale("glass_radius", 0, 40, 1, 0, fmt=px))
+        self._row(c, "glass", "Shadow", "Drop shadow under floating windows.",
+                  self._scale("glass_shadow", 0.0, 1.0, 0.01, 2, fmt=pct))
+
+        c = self._group(pg, "Backdrop")
+        box = Gtk.Box(spacing=6)
+        cur = self.s["glass_wallpaper"]
+        lbl = Gtk.Label(label=os.path.basename(cur) if cur else "Auto-detect", ellipsize=3, max_width_chars=22)
+        pick = Gtk.Button(label="Choose…")
+        auto = Gtk.Button(label="Auto")
+        auto.add_css_class("flat")
+        box.append(lbl)
+        box.append(pick)
+        box.append(auto)
+
+        def choose(*_):
+            dlg = Gtk.FileDialog(title="Picture for the glass")
+            f = Gtk.FileFilter()
+            f.set_name("Images")
+            f.add_pixbuf_formats()
+            store = Gio.ListStore.new(Gtk.FileFilter)
+            store.append(f)
+            dlg.set_filters(store)
+
+            def done(d, res):
+                try:
+                    fl = d.open_finish(res)
+                except GLib.Error:
+                    return
+                self.s["glass_wallpaper"] = fl.get_path()
+                lbl.set_text(os.path.basename(fl.get_path()))
+            dlg.open(self, None, done)
+        pick.connect("clicked", choose)
+        auto.connect("clicked", lambda *_: (self.s.__setitem__("glass_wallpaper", ""), lbl.set_text("Auto-detect")))
+        self._row(c, "glass", "Wallpaper", "What the glass refracts. Auto finds your wallpaper from swww, awww, "
+                  "hyprpaper, waypaper or swaybg; with none, a soft aurora in the theme's colours.", box)
+        self._row(c, "glass", "Follow the window", "On Hyprland the glass bends the part of the wallpaper that's "
+                  "really behind the window, even while you drag it.", self._switch("glass_follow"))
+
+        reset = Gtk.Button(label="Reset Liquid Glass settings", halign=Gtk.Align.START, margin_top=14)
+        reset.connect("clicked", lambda *_: self._apply_glass(dict(liquid.GLASS_DEFAULTS)))
+        pg.content.append(reset)
+        return pg
+
+    def _glass_presets(self):
+        box = Gtk.Box(css_classes=["linked"])
+        for _pid, label, vals in GLASS_PRESETS:
+            b = Gtk.Button(label=label)
+            b.connect("clicked", lambda _b, v=vals: self._apply_glass(v))
+            box.append(b)
+        return box
+
+    def _apply_glass(self, vals):
+        for k, v in vals.items():
+            self.s[k] = v
+        GLib.idle_add(lambda: (self.reload(), False)[1])
 
     # ---------------------------------------------------------------- tabs
     def _page_tabs(self):

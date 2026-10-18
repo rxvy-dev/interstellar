@@ -20,15 +20,16 @@ def mix(a, b, t):
     return "#%02x%02x%02x" % (round(ra + (rb - ra) * t), round(ga + (gb - ga) * t), round(ba + (bb - ba) * t))
 
 
-def build_css(theme, style="glass", opacity=1.0, custom=""):
+def build_css(theme, style="glass", opacity=1.0, custom="", glass=None):
+    """glass: {"radius": px, "shadow": 0..1} for the Liquid Glass style."""
     bg, fg, acc = theme["bg"], theme["fg"], theme["accent"]
     dark = luminance(bg) < 0.45
     lift = "#ffffff" if dark else "#000000"
-    bar_a = {"glass": 0.72, "solid": 1.0, "minimal": 1.0}.get(style, 0.8) * max(opacity, 0.35)
+    bar_a = {"glass": 0.72, "solid": 1.0, "minimal": 1.0, "liquid": 0.0}.get(style, 0.8) * max(opacity, 0.35)
     bar = mix(bg, lift, 0.035 if style != "minimal" else 0.0)
     soft = mix(bg, fg, 0.55)
     hover = rgba(fg, 0.07)
-    radius = {"glass": 10, "solid": 6, "minimal": 4}.get(style, 8)
+    radius = {"glass": 10, "solid": 6, "minimal": 4, "liquid": 12}.get(style, 8)
     acc_fg = "#000000" if luminance(acc) > 0.5 else "#ffffff"
     return f"""
 window.istl, window.istl.background {{ background: transparent; color: {fg}; }}
@@ -97,7 +98,32 @@ scrollbar.istl:hover slider {{ background: {rgba(acc, 0.7)}; min-width: 7px; }}
 .istl-hint {{ background: {acc}; color: {acc_fg}; font-weight: 800; font-family: monospace; border-radius: 3px; padding: 0 3px; }}
 popover.istl-pop > contents {{ background: {mix(bg, lift, 0.06)}; color: {fg}; border: 1px solid {rgba(fg, 0.12)}; }}
 popover.istl-pop modelbutton:hover {{ background: {rgba(acc, 0.2)}; }}
+{_liquid_css(theme, glass or {}) if style == "liquid" else ""}
 {custom or ''}
+"""
+
+
+def _liquid_css(theme, glass):
+    """The window itself is the glass slab (drawn by glass.py): everything on it stays see-through."""
+    fg, acc = theme["fg"], theme["accent"]
+    r = int(glass.get("radius", 16))
+    sh = max(0.0, min(1.0, float(glass.get("shadow", 0.5))))
+    hi = rgba("#ffffff", 0.16 if luminance(theme["bg"]) < 0.45 else 0.55)
+    return f"""
+window.istl.liquid, window.istl.liquid.background {{ background: transparent; }}
+window.istl.liquid.csd {{ border-radius: {r}px;
+  box-shadow: 0 18px 46px rgba(0,0,0,{0.55 * sh:.3f}), 0 4px 12px rgba(0,0,0,{0.30 * sh:.3f}); }}
+window.istl.liquid.csd.maximized, window.istl.liquid.csd.fullscreen,
+window.istl.liquid.csd.tiled, window.istl.liquid.csd.tiled-top, window.istl.liquid.csd.tiled-bottom,
+window.istl.liquid.csd.tiled-left, window.istl.liquid.csd.tiled-right {{ border-radius: 0; box-shadow: none; }}
+window.istl.liquid .istl-bar, window.istl.liquid headerbar.istl-bar {{ background: transparent; box-shadow: none;
+  border-bottom: 1px solid {rgba(fg, 0.08)}; }}
+window.istl.liquid .istl-bar.bottom {{ border-bottom: none; border-top: 1px solid {rgba(fg, 0.08)}; }}
+window.istl.liquid .istl-tab.active {{ background: {rgba("#ffffff", 0.10)}; box-shadow: inset 0 1px {hi},
+  inset 0 0 0 1px {rgba(fg, 0.10)}; }}
+window.istl.liquid .istl-tab.active label.title {{ color: {fg}; }}
+window.istl.liquid .istl-tab .icon, window.istl.liquid .istl-brand {{ color: {acc}; }}
+window.istl.liquid paned.istl > separator {{ background: {rgba(fg, 0.12)}; }}
 """
 
 

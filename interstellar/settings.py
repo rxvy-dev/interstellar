@@ -21,7 +21,23 @@ DEFAULTS = {
     "starfield_density": 1.0,
     "background_image": "",
     "background_dim": 0.65,
-    "ui_style": "glass",           # glass | solid | minimal
+    "ui_style": "glass",           # glass | solid | minimal | liquid
+    # Liquid Glass (ui_style "liquid", or any Liquid theme) — ranges live in liquid.GLASS_KEYS
+    "glass_frost": 0.5,            # backdrop blur
+    "glass_refraction": 1.0,       # how hard the curved rim bends the backdrop
+    "glass_edge": 26,              # width of the curved rim, px
+    "glass_dispersion": 1.0,       # rainbow split at the rim
+    "glass_tint": 0.45,            # theme-colour tint over the glass (readability)
+    "glass_vibrancy": 1.3,         # backdrop saturation
+    "glass_rim": 0.7,              # specular edge highlight
+    "glass_lens": 0.3,             # whole-window magnifying lens
+    "glass_grain": 0.3,            # fine noise
+    "glass_radius": 16,            # corner radius, px
+    "glass_shadow": 0.5,           # drop shadow (floating windows)
+    "glass_tone": "auto",          # auto | dark | light
+    "glass_wallpaper": "",         # "" = detect (swww / awww / hyprpaper / waypaper / swaybg)
+    "glass_stars": True,           # starfield on top of the glass
+    "glass_follow": True,          # follow the window's position on screen (Hyprland)
     # tabs & window
     "tab_position": "top",         # top | bottom
     "hide_single_tab": False,

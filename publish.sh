@@ -111,7 +111,7 @@ if [ "$USE_GH" = 1 ]; then
     git push -u origin main
   else
     gh repo create "$SLUG" $VIS --source . --remote origin --push \
-      --description "✦ A terminal that's out of this world — GTK 4 + VTE, tabs, splits, 25 themes, an animated starfield and a GUI for every setting" \
+      --description "✦ A terminal that's out of this world — GTK 4 + VTE, tabs, splits, 28 themes, Liquid Glass, an animated starfield and a GUI for every setting" \
       --homepage "https://github.com/$SLUG"
   fi
   gh repo edit "$SLUG" --add-topic terminal,terminal-emulator,linux,gtk4,vte,python,themes,ricing,space >/dev/null 2>&1 || true

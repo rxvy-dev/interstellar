@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">Interstellar Terminal</h1>
 <p align="center"><b>A terminal that's out of this world.</b><br>
-Tabs, splits, 25 themes, an animated starfield, and a settings window for every option.</p>
+Tabs, splits, 28 themes, Liquid Glass, an animated starfield, and a settings window for every option.</p>
 <p align="center">
   <img alt="GTK 4" src="https://img.shields.io/badge/GTK-4-ffb347?style=flat-square">
   <img alt="VTE" src="https://img.shields.io/badge/engine-VTE-ffb347?style=flat-square">
@@ -73,12 +73,27 @@ If you don't want to install it, run it from the folder with `./bin/interstellar
 ### Space, but useful
 - **Animated starfield:** parallax stars drift behind your text, with the odd shooting star. It's drawn once behind the whole window, so it flows across split panes. You can set it to Drift, Twinkle or Still (Still uses no CPU), and choose the density. Toggle it with `Ctrl+Shift+F11`.
 - **Space themes:** Event Horizon (the default), Nebula, Supernova, Red Giant, Deep Space, Andromeda, Pulsar and Aurora, plus the classics: Dracula, Catppuccin, Tokyo Night, Gruvbox, Nord, One Dark, Rosé Pine, Kanagawa, Everforest, Solarized, Monokai, GitHub, Matrix and Amber CRT.
-- **Background images** with adjustable dimming, **window transparency**, and three window styles: Glass, Solid and Minimal.
+- **Background images** with adjustable dimming, **window transparency**, and four window styles: Glass, Solid, Minimal and [Liquid Glass](#liquid-glass).
 - **`istl fetch`** prints a space-themed system summary, so your screenshots look good too.
 
 | Nebula | Aurora |
 |---|---|
 | ![Nebula theme](docs/nebula.png) | ![Aurora theme](docs/aurora.png) |
+
+### Liquid Glass
+![The Liquid Glass theme refracting a wallpaper](docs/liquid-glass.png)
+
+The whole window becomes a slab of curved glass over your wallpaper. The edge bends and splits the light like real glass, the middle frosts it, and a highlight runs along the rim. The starfield keeps drifting inside it.
+
+- **Themes:** pick **◈ Liquid Glass**, **◈ Liquid Glass Light** or **◈ Liquid Nebula** in the gallery, or set *UI style → Liquid Glass* to turn any theme into glass (its background colour becomes the tint).
+- **Settings for everything** in *Preferences → Liquid Glass*: frost (blur), refraction, edge width, chromatic dispersion, lens, tint, vibrancy, rim light, grain, corner radius, shadow, glass tone and stars on the glass. Presets (*Crystal*, *Liquid*, *Frosted*, *Smoked*) give you a starting point, and every slider applies live.
+- **Your real wallpaper:** it's found automatically from swww, awww, hyprpaper, waypaper or swaybg, or you can choose a picture. With none, the glass refracts a soft aurora in the theme's colours.
+- **On Hyprland** the glass follows the window, so it bends the part of the wallpaper that's really behind it, even while you drag it. Elsewhere it refracts the wallpaper as if the window sat in the top-left corner.
+- It's drawn with OpenGL and only re-renders when the window moves, resizes or a setting changes, so typing costs nothing extra. If OpenGL isn't available, a frosted-glass fallback is used (no refraction).
+
+The glass shows your wallpaper, not the windows behind it (like macOS). On Hyprland, set *Corner radius* to your `decoration:rounding` so the corners line up.
+
+![Liquid Glass preferences](docs/prefs-liquid-glass.png)
 
 ### Customize everything, with a GUI
 | Theme gallery: hover to preview, click to keep | Theme Studio |
@@ -224,3 +239,5 @@ Code map:
 
 ## License
 MIT
+
+The Liquid Glass refraction shader (`interstellar/liquid.py`) is adapted from MacShell's Liquid Glass by Rickky, also MIT licensed.

@@ -6,7 +6,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Vte", "3.91")
 from gi.repository import Gtk, Gdk, Gio, GLib
 
-from . import APP_ID, NAME, VERSION, themes
+from . import APP_ID, NAME, VERSION, themes, liquid
 from .chrome import build_css, PREFS_CSS
 from .settings import Settings
 
@@ -55,7 +55,9 @@ class App(Gtk.Application):
 
     def apply_css(self):
         th = themes.get(self.theme_name())
-        css = build_css(th, self.s["ui_style"], float(self.s["opacity"]), self.s["custom_css"])
+        style = liquid.effective_style(self.s["ui_style"], th)
+        css = build_css(th, style, float(self.s["opacity"]), self.s["custom_css"],
+                        glass={"radius": self.s["glass_radius"], "shadow": self.s["glass_shadow"]})
         css += f"\nvte-terminal {{ padding: {int(self.s['padding'])}px; }}\n"
         css += f"\n@define-color accent_color {th['accent']};\n" + PREFS_CSS
         if self.css is None:
@@ -78,7 +80,7 @@ class App(Gtk.Application):
             w.apply_settings("theme")
 
     def on_setting(self, key):
-        if key in ("theme", "ui_style", "opacity", "custom_css", "padding", "*"):
+        if key in ("theme", "ui_style", "opacity", "custom_css", "padding", "glass_radius", "glass_shadow", "*"):
             self.apply_css()
         for w in self.all_windows():
             w.apply_settings(key)

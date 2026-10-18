@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+- **Liquid Glass:** a new window style that turns the window into curved, refracting glass over your wallpaper, with a rim highlight and the starfield drifting inside
+- Three Liquid themes: Liquid Glass, Liquid Glass Light and Liquid Nebula (◈ filter in the theme gallery)
+- *Preferences → Liquid Glass*: frost, refraction, edge width, chromatic dispersion, lens, tint, vibrancy, rim light, grain, corner radius, shadow, tone, stars on glass, wallpaper, and Crystal / Liquid / Frosted / Smoked presets
+- Wallpaper auto-detection (swww, awww, hyprpaper, waypaper, swaybg) and live window tracking on Hyprland
+- OpenGL rendering through libepoxy (no new dependencies) with a cairo fallback
+- The refraction shader is adapted from MacShell's Liquid Glass by Rickky (MIT)
+
 ## 1.0.0
 First release of Interstellar Terminal.
 

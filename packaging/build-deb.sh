@@ -19,7 +19,7 @@ Provides: x-terminal-emulator
 Maintainer: rxvy <https://github.com/rxvy-dev>
 Homepage: https://github.com/rxvy-dev/interstellar
 Description: Terminal emulator that's out of this world
- GTK 4 + VTE terminal with tabs, split panes, an animated starfield, 25 themes,
+ GTK 4 + VTE terminal with tabs, split panes, an animated starfield, Liquid Glass, 28 themes,
  a theme studio, a command palette, quick-select hints, safe paste, session
  restore, a drop-down mode and a GUI for every setting.
 CTL
