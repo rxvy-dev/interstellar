@@ -16,7 +16,7 @@ import ctypes, hashlib, json, math, os, socket, struct, threading, time
 import cairo
 from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib
 
-from . import liquid, themes
+from . import capture, liquid, themes
 
 # ===================================================================================== GL via epoxy
 _c = ctypes
@@ -105,6 +105,8 @@ class _Hypr:
                     break
         self._mons, self._mons_t = [], 0.0
         self._clients, self._clients_t = [], 0.0
+        self._rounding = None
+        self.last = None
 
     def req(self, cmd):
         if not self.sock:
@@ -157,8 +159,26 @@ class _Hypr:
             for m in self.monitors(force):
                 if m.get("id") == cl.get("monitor"):
                     name, mx, my, mw, mh = liquid.monitor_logical(m)
+                    self.last = (cl, mx, my)
                     return name, at[0] - mx, at[1] - my, mw, mh
         return None
+
+    def clients(self, max_age=0.25):
+        now = time.monotonic()
+        if now - self._clients_t > max_age:
+            c = self.req("j/clients")
+            self._clients = c if isinstance(c, list) else []
+            self._clients_t = now
+        return self._clients
+
+    def rounding(self):
+        if self._rounding is None:
+            o = self.req("j/getoption decoration:rounding")
+            try:
+                self._rounding = float(o.get("int", 0)) if isinstance(o, dict) else 0.0
+            except (TypeError, ValueError):
+                self._rounding = 0.0
+        return self._rounding
 
 
 HYPR = _Hypr()
@@ -389,6 +409,10 @@ class GlassLayer(Gtk.Box):
         self.mw, self.mh = 1920.0, 1080.0
         self.located = False
         self.pix_key, self.pixbuf = None, None
+        self.live_tex = None          # (key, w, h, stride, bytes): wallpaper + captured windows, cairo-ordered
+        self.cap = None
+        self._live_pending = False
+        self._targets = []
         self._timer = 0
         self._fast = False
         self.area = None
@@ -417,8 +441,60 @@ class GlassLayer(Gtk.Box):
     def refresh(self):
         """Settings / theme / wallpaper changed."""
         self._load_backdrop()
+        self._sync_capture()
         self._schedule()
         self.redraw()
+
+    # ---------------------------------------------------------------- live window capture
+    def _want_capture(self):
+        return (self.get_mapped() and not self.live() and bool(self.s["glass_windows"]) and bool(HYPR.sock)
+                and bool(self.s["glass_follow"]) and capture.status()[0])
+
+    def _sync_capture(self):
+        if self._want_capture():
+            fps = int(liquid._num(self.s, "glass_fps"))
+            if self.cap is None or not self.cap.is_alive():
+                self.cap = capture.Capturer(self._on_live_frame, fps)
+                self.cap.start()
+            self.cap.fps = fps
+        elif self.cap is not None:
+            self.cap.stop()
+            self.cap = None
+            if self.live_tex is not None:
+                self.live_tex = None
+                self.redraw()
+
+    def _on_live_frame(self, key, w, h, stride, data):      # worker thread
+        if self._live_pending:
+            return                                          # the UI hasn't taken the last one yet: drop
+        self._live_pending = True
+        GLib.idle_add(self._got_live, (key, w, h, stride, data))
+
+    def _got_live(self, frame):
+        self._live_pending = False
+        if self.cap is not None and self._targets:
+            self.live_tex = frame
+            self.redraw()
+        return False
+
+    def _feed_capture(self, cl, mx, my):
+        if self.cap is None:
+            return
+        rnd = HYPR.rounding()
+        targets = []
+        for t in capture.windows_behind(HYPR.clients(), cl, cl.get("monitor")):
+            x, y, w, h = t["rect"]
+            targets.append({"handle": t["handle"], "rect": (x - mx, y - my, w, h), "rounding": rnd})
+        self._targets = targets
+        if not targets and self.live_tex is not None:
+            self.live_tex = None            # nothing behind us: just the wallpaper
+            self.redraw()
+        pb = self.pixbuf
+        tex = (pb.get_width(), pb.get_height()) if pb is not None else (max(32, int(min(self.mw * 0.5, 1600))),
+                                                                         max(32, int(min(self.mw * 0.5, 1600) * self.mh / max(self.mw, 1))))
+        wall = (self.pix_key, pb.get_width(), pb.get_height(), pb.get_rowstride(),
+                pb.read_pixel_bytes().get_data()) if pb is not None else None
+        self.cap.update(targets=targets, tex=tex, mon=(self.mw, self.mh), wall=wall)
 
     def redraw(self):
         if self.area is not None:
@@ -426,6 +502,9 @@ class GlassLayer(Gtk.Box):
 
     def shutdown(self):
         self._stop()
+        if self.cap is not None:
+            self.cap.stop()
+            self.cap = None
         for i in (self._active_id, self._max_id, self._fs_id):
             try:
                 self.win.disconnect(i)
@@ -448,10 +527,12 @@ class GlassLayer(Gtk.Box):
         self._fallback_monitor()
         self._track()
         self._load_backdrop()
+        self._sync_capture()
         self._schedule()
 
     def _on_unmap(self, *_):
         self._stop()
+        self._sync_capture()
 
     def _on_wallpapers(self):
         self.refresh()
@@ -506,6 +587,8 @@ class GlassLayer(Gtk.Box):
                 if changed_mon:
                     self._load_backdrop()
                 self.redraw()
+            if self.cap is not None and HYPR.last:
+                self._feed_capture(*HYPR.last)
         if self._fast != self.win.is_active():
             self._schedule()
             return False
@@ -594,7 +677,7 @@ class _GlassGL(Gtk.GLArea):
                 gl["glGetProgramInfoLog"](prog, 4096, None, log)
                 raise RuntimeError("link: " + log.value.decode(errors="replace").strip())
             self.prog = prog
-            for name in ("src", "hasTex", "live", "opacity", "glassSize", "srcSize", "srcOffset", "fbHeight", "scale",
+            for name in ("src", "hasTex", "bgra", "live", "opacity", "glassSize", "srcSize", "srcOffset", "fbHeight", "scale",
                          "radius", "bezel", "thickness", "dispersion", "ior", "blurPx", "tintMix", "tintColor",
                          "saturation", "milk", "dark", "rim", "rimWidth", "lightDir", "depth", "grain", "magnify",
                          "ringW", "taps"):
@@ -619,26 +702,35 @@ class _GlassGL(Gtk.GLArea):
         self.tex_key = None
 
     def _upload(self):
-        gl, pb = self.gl, self.layer.pixbuf
-        if pb is None:
-            return False
+        """Bind the backdrop texture, uploading it if it changed. → (have texture, cairo-ordered pixels)"""
+        gl, L = self.gl, self.layer
+        if L.live_tex is not None:
+            key, w, h, stride, data = L.live_tex
+            bgra = True
+        elif L.pixbuf is not None:
+            pb = L.pixbuf
+            key, w, h, stride = L.pix_key, pb.get_width(), pb.get_height(), pb.get_rowstride()
+            data = None
+            bgra = False
+        else:
+            return False, False
         gl["glActiveTexture"](GL_TEXTURE0)
         gl["glBindTexture"](GL_TEXTURE_2D, self.tex.value)
-        if self.tex_key != self.layer.pix_key:
-            data = pb.read_pixel_bytes().get_data()
+        if self.tex_key != key:
+            if data is None:
+                data = L.pixbuf.read_pixel_bytes().get_data()
             buf = _c.create_string_buffer(data, len(data))
             gl["glPixelStorei"](GL_UNPACK_ALIGNMENT, 4)
-            gl["glPixelStorei"](GL_UNPACK_ROW_LENGTH, pb.get_rowstride() // 4)
-            gl["glTexImage2D"](GL_TEXTURE_2D, 0, GL_RGBA8, pb.get_width(), pb.get_height(), 0, GL_RGBA,
-                               GL_UNSIGNED_BYTE, _c.cast(buf, _c.c_void_p))
+            gl["glPixelStorei"](GL_UNPACK_ROW_LENGTH, stride // 4)
+            gl["glTexImage2D"](GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, _c.cast(buf, _c.c_void_p))
             gl["glPixelStorei"](GL_UNPACK_ROW_LENGTH, 0)
             gl["glTexParameteri"](GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
             gl["glTexParameteri"](GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
             gl["glTexParameteri"](GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
             gl["glTexParameteri"](GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
             gl["glGenerateMipmap"](GL_TEXTURE_2D)
-            self.tex_key = self.layer.pix_key
-        return True
+            self.tex_key = key
+        return True, bgra
 
     def _render(self, area, ctx):
         gl = self.gl
@@ -648,7 +740,7 @@ class _GlassGL(Gtk.GLArea):
         gl["glClear"](GL_COLOR_BUFFER_BIT)
         L = self.layer
         p = L.params()
-        has_tex = p["live"] < 0.5 and self._upload()
+        has_tex, bgra = self._upload() if p["live"] < 0.5 else (False, False)
         sc = self.get_scale_factor() or 1
         w, h = self.get_width(), self.get_height()
         u = self.loc
@@ -664,6 +756,7 @@ class _GlassGL(Gtk.GLArea):
                   "saturation", "milk", "dark", "rim", "rimWidth", "depth", "grain", "magnify", "ringW"):
             gl["glUniform1f"](u[k], float(p[k]))
         gl["glUniform1f"](u["hasTex"], 1.0 if has_tex else 0.0)
+        gl["glUniform1f"](u["bgra"], 1.0 if bgra else 0.0)
         gl["glUniform1i"](u["taps"], int(p["taps"]))
         gl["glUniform2f"](u["lightDir"], *[float(c) for c in p["lightDir"]])
         gl["glUniform3f"](u["tintColor"], *[float(c) for c in p["tintColor"]])

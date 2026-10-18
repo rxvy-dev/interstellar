@@ -113,11 +113,11 @@ PM=$(detect_pm)
 deps_for() {
   case "$1" in
     pacman)       CORE="python python-gobject python-cairo gtk4 vte4 make"
-                  EXTRA="ttf-jetbrains-mono gtk4-layer-shell xdotool wmctrl" ;;
+                  EXTRA="ttf-jetbrains-mono gtk4-layer-shell xdotool wmctrl python-pywayland" ;;
     apt-get)      CORE="python3 python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-vte-3.91 make"
-                  EXTRA="fonts-jetbrains-mono xdotool wmctrl" ;;
+                  EXTRA="fonts-jetbrains-mono xdotool wmctrl python3-pywayland" ;;
     dnf|yum)      CORE="python3 python3-gobject python3-cairo gtk4 vte291-gtk4 make"
-                  EXTRA="jetbrains-mono-fonts gtk4-layer-shell xdotool wmctrl" ;;
+                  EXTRA="jetbrains-mono-fonts gtk4-layer-shell xdotool wmctrl python3-pywayland" ;;
     rpm-ostree)   CORE="python3-gobject python3-cairo gtk4 vte291-gtk4"
                   EXTRA="jetbrains-mono-fonts" ;;
     zypper)       CORE="python3 python3-gobject python3-gobject-cairo python3-gobject-Gdk typelib-1_0-Gtk-4_0 typelib-1_0-Vte-3_91 make"

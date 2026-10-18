@@ -15,10 +15,14 @@ jobs:
         run: make check PYTHON=/usr/bin/python3
       - name: Starts without errors
         run: |
-          export GDK_BACKEND=x11 GSK_RENDERER=cairo NO_AT_BRIDGE=1
+          export GDK_BACKEND=x11 GSK_RENDERER=cairo NO_AT_BRIDGE=1 GTK_A11Y=none
           timeout 8 xvfb-run -a ./bin/interstellar --no-restore > log.txt 2>&1 || true
           cat log.txt
-          ! grep -E "Traceback|Error" log.txt
+          # real Python errors only: GTK / D-Bus warnings on a headless runner mention "Error" harmlessly
+          if grep -nE "Traceback|^[A-Za-z_.]*(Error|Exception):" log.txt; then
+            grep -nE "Traceback|^[A-Za-z_.]*(Error|Exception):" log.txt | head -20 | while IFS= read -r l; do echo "::error::$l"; done
+            exit 1
+          fi
       - name: Build .deb
         run: make deb
       - uses: actions/upload-artifact@v4
