@@ -11,7 +11,7 @@ refracting your wallpaper.
   refracts the wallpaper as if the window sat in the top-left corner.
 * The shader only runs when something changes (move, resize, a setting). Terminal output just recomposites.
 """
-import ctypes, json, math, os, socket, time
+import ctypes, hashlib, json, math, os, socket, struct, threading, time
 
 import cairo
 from gi.repository import Gtk, Gdk, GdkPixbuf, Gio, GLib
@@ -165,12 +165,22 @@ HYPR = _Hypr()
 
 
 # ===================================================================================== wallpapers
+CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "interstellar", "glass")
+
+
 class _Wallpapers:
     def __init__(self):
         self.map = {}
         self.listeners = []
         self._busy = False
         self._timer = 0
+        # last detection, so the first window doesn't wait for the wallpaper daemons to answer
+        try:
+            with open(os.path.join(CACHE_DIR, "wallpapers.json")) as f:
+                m = json.load(f)
+            self.map = {k: v for k, v in m.items() if isinstance(v, str) and os.path.isfile(v)}
+        except (OSError, ValueError, AttributeError):
+            pass
 
     def start(self):
         if not self._timer:
@@ -204,6 +214,12 @@ class _Wallpapers:
         new = liquid.parse_wallpapers(out or "")
         if new != self.map:
             self.map = new
+            try:
+                os.makedirs(CACHE_DIR, exist_ok=True)
+                with open(os.path.join(CACHE_DIR, "wallpapers.json"), "w") as f:
+                    json.dump(new, f)
+            except OSError:
+                pass
             for fn in list(self.listeners):
                 fn()
 
@@ -253,38 +269,113 @@ def _hex(h):
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
 
-def backdrop_pixbuf(path, mw, mh, theme):
-    """The monitor's wallpaper cropped like the wallpaper daemon does, at texture resolution."""
+def _key(path, mw, mh, theme):
     tw = max(32, int(min(mw * 0.5, 1600)))
     th = max(32, int(tw * mh / max(mw, 1)))
-    mtime = 0
     if path:
         try:
-            mtime = os.stat(path).st_mtime_ns
+            st = os.stat(path)
+            return (path, st.st_mtime_ns, st.st_size, tw, th), tw, th
         except OSError:
-            path = ""
-    key = (path, mtime, tw, th) if path else ("aurora", theme["bg"], theme["accent"], tuple(theme["palette"]), tw, th)
-    if key in _PIX:
-        return key, _PIX[key]
-    pb = None
-    if path:
-        try:
-            src = GdkPixbuf.Pixbuf.new_from_file(path)
-            src = src.apply_embedded_orientation() or src
-            x, y, cw, ch = liquid.cover_rect(src.get_width(), src.get_height(), tw, th)
-            src = src.new_subpixbuf(int(x), int(y), max(1, int(cw)), max(1, int(ch)))
-            pb = src.scale_simple(tw, th, GdkPixbuf.InterpType.HYPER)
-        except Exception:
-            pb = None
+            pass
+    return ("aurora", theme["bg"], theme["accent"], tuple(theme["palette"]), tw, th), tw, th
+
+
+def _disk_path(key):
+    return os.path.join(CACHE_DIR, hashlib.sha1(repr(key).encode()).hexdigest() + ".rgba")
+
+
+def _disk_load(key):
+    try:
+        with open(_disk_path(key), "rb") as f:
+            w, h, stride = struct.unpack("<III", f.read(12))
+            data = f.read()
+        if len(data) != stride * h:
+            return None
+        return GdkPixbuf.Pixbuf.new_from_bytes(GLib.Bytes.new(data), GdkPixbuf.Colorspace.RGB, True, 8, w, h, stride)
+    except (OSError, struct.error, GLib.Error):
+        return None
+
+
+def _disk_save(key, pb):
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        # keep the cache small: the few most recent backdrops
+        old = sorted((os.path.join(CACHE_DIR, f) for f in os.listdir(CACHE_DIR) if f.endswith(".rgba")),
+                     key=os.path.getmtime)
+        for f in old[:-6]:
+            os.remove(f)
+        tmp = _disk_path(key) + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(struct.pack("<III", pb.get_width(), pb.get_height(), pb.get_rowstride()))
+            f.write(pb.read_pixel_bytes().get_data())
+        os.replace(tmp, _disk_path(key))
+    except (OSError, GLib.Error):
+        pass
+
+
+def _decode(path, tw, th):
+    """Decode only as many pixels as the texture needs (JPEG decodes at 1/2, 1/4, 1/8 natively), then crop."""
+    _fmt, iw, ih = GdkPixbuf.Pixbuf.get_file_info(path)
+    if not iw or not ih:
+        raise ValueError("unreadable image")
+    sc = max(tw / iw, th / ih)
+    pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(path, max(tw, int(iw * sc + 0.5)), max(th, int(ih * sc + 0.5)), True)
+    pb = pb.apply_embedded_orientation() or pb
+    x, y, cw, ch = liquid.cover_rect(pb.get_width(), pb.get_height(), tw, th)
+    pb = pb.new_subpixbuf(int(x), int(y), max(1, int(cw)), max(1, int(ch)))
+    if (pb.get_width(), pb.get_height()) != (tw, th):
+        pb = pb.scale_simple(tw, th, GdkPixbuf.InterpType.BILINEAR)
+    return pb
+
+
+def _build(key, path, tw, th, theme):
+    pb = _disk_load(key)
+    if pb is not None:
+        return pb
+    try:
+        pb = _decode(path, tw, th) if path else None
+    except Exception:  # noqa: BLE001 — a broken file just means: aurora
+        pb = None
     if pb is None:
-        key = ("aurora", theme["bg"], theme["accent"], tuple(theme["palette"]), tw, th)
         pb = _aurora(tw, th, theme)
     if not pb.get_has_alpha():
         pb = pb.add_alpha(False, 0, 0, 0)
-    if len(_PIX) > 6:
-        _PIX.clear()
-    _PIX[key] = pb
-    return key, pb
+    _disk_save(key, pb)
+    return pb
+
+
+_PENDING = {}     # key -> callbacks waiting for that backdrop
+
+
+def request_backdrop(path, mw, mh, theme, callback):
+    """The monitor's wallpaper cropped like the wallpaper daemon does, at texture resolution.
+    Calls callback(key, pixbuf) — right away from memory, otherwise once a worker thread has it
+    (from the disk cache, or decoded)."""
+    key, tw, th = _key(path, mw, mh, theme)
+    if key in _PIX:
+        callback(key, _PIX[key])
+        return key
+    if key in _PENDING:
+        _PENDING[key].append(callback)
+        return key
+    _PENDING[key] = [callback]
+    path = key[0] if key[0] != "aurora" else ""
+
+    def done(pb):
+        if len(_PIX) > 6:
+            _PIX.clear()
+        _PIX[key] = pb
+        for cb in _PENDING.pop(key, []):
+            cb(key, pb)
+        return False
+
+    def work():
+        pb = _build(key, path, tw, th, theme)
+        GLib.idle_add(done, pb)
+
+    threading.Thread(target=work, name="istl-glass-backdrop", daemon=True).start()
+    return key
 
 
 # ===================================================================================== the layer
@@ -320,9 +411,13 @@ class GlassLayer(Gtk.Box):
         maxed = self.win.is_maximized() or self.win.is_fullscreen()
         return liquid.shader_params(self.s, self.theme(), maxed)
 
+    def live(self):
+        return liquid.is_live(self.s)
+
     def refresh(self):
         """Settings / theme / wallpaper changed."""
         self._load_backdrop()
+        self._schedule()
         self.redraw()
 
     def redraw(self):
@@ -368,8 +463,8 @@ class GlassLayer(Gtk.Box):
 
     def _schedule(self):
         self._stop()
-        if not self.get_mapped() or not HYPR.sock or not self.s["glass_follow"]:
-            return
+        if not self.get_mapped() or not HYPR.sock or not self.s["glass_follow"] or self.live():
+            return       # see-through glass doesn't depend on where the window is
         # while focused the window may be dragged or resized and Hyprland sends no events mid-drag:
         # follow it every frame. Unfocused, a slow check is plenty.
         self._fast = self.win.is_active()
@@ -393,6 +488,8 @@ class GlassLayer(Gtk.Box):
             if not self.located:
                 self._fallback_monitor()
             return False
+        if self.live():
+            return False
         loc = HYPR.locate(self.win)
         if loc:
             name, x, y, mw, mh = loc
@@ -415,11 +512,16 @@ class GlassLayer(Gtk.Box):
         return True
 
     def _load_backdrop(self):
+        if self.live():
+            return
         path = WALLPAPERS.path_for(self.monitor, self.s["glass_wallpaper"] or "")
-        key, pb = backdrop_pixbuf(path, self.mw, self.mh, self.theme())
-        if key != self.pix_key:
-            self.pix_key, self.pixbuf = key, pb
-            self.redraw()
+        self._want = request_backdrop(path, self.mw, self.mh, self.theme(), self._got_backdrop)
+
+    def _got_backdrop(self, key, pb):
+        if key != getattr(self, "_want", None) or key == self.pix_key:
+            return
+        self.pix_key, self.pixbuf = key, pb
+        self.redraw()
 
 
 class _GlassGL(Gtk.GLArea):
@@ -492,9 +594,10 @@ class _GlassGL(Gtk.GLArea):
                 gl["glGetProgramInfoLog"](prog, 4096, None, log)
                 raise RuntimeError("link: " + log.value.decode(errors="replace").strip())
             self.prog = prog
-            for name in ("src", "glassSize", "srcSize", "srcOffset", "fbHeight", "scale", "radius", "bezel",
-                         "thickness", "dispersion", "blurPx", "tintMix", "tintColor", "saturation", "dark",
-                         "rim", "grain", "magnify", "ringW"):
+            for name in ("src", "hasTex", "live", "opacity", "glassSize", "srcSize", "srcOffset", "fbHeight", "scale",
+                         "radius", "bezel", "thickness", "dispersion", "ior", "blurPx", "tintMix", "tintColor",
+                         "saturation", "milk", "dark", "rim", "rimWidth", "lightDir", "depth", "grain", "magnify",
+                         "ringW", "taps"):
                 self.loc[name] = gl["glGetUniformLocation"](prog, name.encode())
             gl["glGenVertexArrays"](1, _c.byref(self.vao))
             gl["glGenTextures"](1, _c.byref(self.tex))
@@ -543,10 +646,9 @@ class _GlassGL(Gtk.GLArea):
             return False
         gl["glClearColor"](0, 0, 0, 0)
         gl["glClear"](GL_COLOR_BUFFER_BIT)
-        if not self._upload():
-            return True
         L = self.layer
         p = L.params()
+        has_tex = p["live"] < 0.5 and self._upload()
         sc = self.get_scale_factor() or 1
         w, h = self.get_width(), self.get_height()
         u = self.loc
@@ -558,9 +660,12 @@ class _GlassGL(Gtk.GLArea):
         gl["glUniform2f"](u["srcOffset"], float(L.ox), float(L.oy))
         gl["glUniform1f"](u["fbHeight"], float(self.fb[1]))
         gl["glUniform1f"](u["scale"], float(self.fb[0]) / max(w, 1) if w else float(sc))
-        for k in ("radius", "bezel", "thickness", "dispersion", "blurPx", "tintMix", "saturation", "dark", "rim",
-                  "grain", "magnify", "ringW"):
+        for k in ("live", "opacity", "radius", "bezel", "thickness", "dispersion", "ior", "blurPx", "tintMix",
+                  "saturation", "milk", "dark", "rim", "rimWidth", "depth", "grain", "magnify", "ringW"):
             gl["glUniform1f"](u[k], float(p[k]))
+        gl["glUniform1f"](u["hasTex"], 1.0 if has_tex else 0.0)
+        gl["glUniform1i"](u["taps"], int(p["taps"]))
+        gl["glUniform2f"](u["lightDir"], *[float(c) for c in p["lightDir"]])
         gl["glUniform3f"](u["tintColor"], *[float(c) for c in p["tintColor"]])
         gl["glBindVertexArray"](self.vao.value)
         gl["glDrawArrays"](GL_TRIANGLES, 0, 3)
@@ -594,7 +699,11 @@ class _GlassCairo(Gtk.DrawingArea):
         r = min(p["radius"], w / 2, h / 2)
         _rounded(cr, 0, 0, w, h, r)
         cr.clip()
-        pb = L.pixbuf
+        pb = None if p["live"] > 0.5 else L.pixbuf
+        if p["live"] > 0.5:
+            tr, tg, tb = p["tintColor"]
+            cr.set_source_rgba(tr, tg, tb, p["opacity"])
+            cr.paint()
         if pb is not None:
             small = self._frosted(pb, (p["blurPx"] - 1.5) / 34.0)
             sx, sy = L.mw / small.get_width(), L.mh / small.get_height()
@@ -604,15 +713,18 @@ class _GlassCairo(Gtk.DrawingArea):
             cr.get_source().set_filter(cairo.FILTER_GOOD)
             cr.paint()
             cr.restore()
-        tr, tg, tb = p["tintColor"]
-        cr.set_source_rgba(tr, tg, tb, p["tintMix"])
-        cr.paint()
-        lift = 0.02 if p["dark"] else 0.055
-        cr.set_source_rgba(1, 1, 1, lift)
+        if p["live"] < 0.5:
+            tr, tg, tb = p["tintColor"]
+            cr.set_source_rgba(tr, tg, tb, p["tintMix"] if pb is not None else 1.0)
+            cr.paint()
+        lift = (0.02 if p["dark"] else 0.055) * p["milk"]
+        cr.set_source_rgba(1, 1, 1, min(lift, 1.0) * (p["opacity"] if p["live"] > 0.5 else 1.0))
         cr.paint()
         # rim light, brighter top-left
         cr.reset_clip()
-        g = cairo.LinearGradient(0, 0, w, h)
+        lx, ly = p["lightDir"]
+        cx, cy = w / 2, h / 2
+        g = cairo.LinearGradient(cx + lx * cx, cy + ly * cy, cx - lx * cx, cy - ly * cy)
         g.add_color_stop_rgba(0, 1, 1, 1, min(0.9, 0.55 * p["rim"]))
         g.add_color_stop_rgba(0.5, 1, 1, 1, min(0.9, 0.12 * p["rim"]))
         g.add_color_stop_rgba(1, 1, 1, 1, min(0.9, 0.35 * p["rim"]))

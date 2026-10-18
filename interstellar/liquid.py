@@ -7,7 +7,7 @@ normal, Snell's law bends the view ray through it, and the backdrop is sampled p
 (dispersion) through a mip-level disk blur, then graded (vibrancy, tint, milky lift) and lit
 (specular rim, meniscus, inner depth).
 """
-import os
+import math, os
 
 from .themes import luminance
 
@@ -15,13 +15,20 @@ STYLE = "liquid"
 
 # setting key -> (default, min, max). Kept here so Preferences, tests and the shader agree.
 GLASS_KEYS = {
-    "glass_frost": (0.5, 0.0, 1.0),        # backdrop blur
+    "glass_frost": (0.5, 0.0, 1.0),        # backdrop blur (wallpaper mode; see-through uses the compositor's blur)
     "glass_refraction": (1.0, 0.0, 3.0),   # how hard the rim bends the backdrop
     "glass_edge": (26, 6, 80),             # width of the curved rim, px
     "glass_dispersion": (1.0, 0.0, 4.0),   # chromatic split at the rim
+    "glass_ior": (1.5, 1.05, 2.5),         # index of refraction: 1.33 water, 1.5 glass, 2.4 diamond
     "glass_tint": (0.45, 0.0, 1.0),        # flat theme-colour tint (readability)
+    "glass_opacity": (0.55, 0.0, 1.0),     # see-through mode: how much the glass hides what's behind it
     "glass_vibrancy": (1.3, 0.0, 2.5),     # backdrop saturation
+    "glass_milk": (1.0, 0.0, 3.0),         # milky brightness lift
     "glass_rim": (0.7, 0.0, 2.0),          # specular edge highlight
+    "glass_rim_width": (1.0, 0.3, 3.0),    # how wide the highlight spreads in from the edge
+    "glass_light_angle": (326, 0, 360),    # where the light comes from, degrees clockwise from the top
+    "glass_depth": (1.0, 0.0, 3.0),        # inner shadow / thickness toward the edges
+    "glass_border": (1.0, 0.0, 4.0),       # thin bright border line, px
     "glass_lens": (0.3, 0.0, 1.0),         # whole-slab magnifying lens
     "glass_grain": (0.3, 0.0, 1.0),        # fine noise
     "glass_radius": (16, 0, 40),           # corner radius, px
@@ -29,11 +36,14 @@ GLASS_KEYS = {
 }
 GLASS_DEFAULTS = {k: v[0] for k, v in GLASS_KEYS.items()}
 GLASS_DEFAULTS.update({
+    "glass_mode": "live",                  # live: see the windows behind (compositor blur) | wallpaper: refract it
+    "glass_quality": "balanced",           # fast | balanced | best (blur samples per pixel, wallpaper mode)
     "glass_tone": "auto",                  # auto | dark | light
     "glass_wallpaper": "",                 # "" = detect from swww / awww / hyprpaper / waypaper / swaybg
     "glass_stars": True,                   # keep the starfield drifting on top of the glass
     "glass_follow": True,                  # track the window's position on screen (Hyprland)
 })
+QUALITY_TAPS = {"fast": 8, "balanced": 16, "best": 24}
 
 
 def is_liquid(style, theme):
@@ -68,23 +78,36 @@ def _rgbf(h):
     return tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
 
 
+def is_live(s):
+    return (s["glass_mode"] or "live") != "wallpaper"
+
+
 def shader_params(s, theme, maximized=False):
     """Settings → the uniforms the shader takes (all sizes in logical px)."""
     refr = _num(s, "glass_refraction")
+    ang = math.radians(_num(s, "glass_light_angle"))
     return {
+        "live": 1.0 if is_live(s) else 0.0,
+        "opacity": _num(s, "glass_opacity"),
         "radius": 0.0 if maximized else _num(s, "glass_radius"),
         "bezel": _num(s, "glass_edge"),
         "thickness": 24.0 * refr * 1.6,
         "dispersion": 0.078 * _num(s, "glass_dispersion") * (0.4 + 0.6 * min(refr, 1.5)),
+        "ior": _num(s, "glass_ior"),
         "blurPx": 1.5 + _num(s, "glass_frost") * 34.0,
         "tintMix": _num(s, "glass_tint") * 0.8,
         "tintColor": _rgbf(theme["bg"]),
         "saturation": _num(s, "glass_vibrancy"),
+        "milk": _num(s, "glass_milk"),
         "dark": 1.0 if is_dark(s, theme) else 0.0,
         "rim": _num(s, "glass_rim"),
+        "rimWidth": _num(s, "glass_rim_width"),
+        "lightDir": (math.sin(ang), -math.cos(ang)),
+        "depth": _num(s, "glass_depth"),
         "grain": 0.02 * _num(s, "glass_grain"),
         "magnify": 0.06 * _num(s, "glass_lens"),
-        "ringW": 0.0 if maximized else 1.0,
+        "ringW": 0.0 if maximized else _num(s, "glass_border"),
+        "taps": QUALITY_TAPS.get(s["glass_quality"] or "balanced", 16),
     }
 
 
@@ -101,6 +124,9 @@ FRAGMENT = """
 out vec4 fragColor;
 
 uniform sampler2D src;
+uniform float hasTex;      // 1 once the wallpaper texture is uploaded
+uniform float live;        // 1 = see-through: translucent glass over the compositor's blur of the windows behind
+uniform float opacity;     // see-through: alpha of the glass body
 uniform vec2  glassSize;   // the glass slab (= the widget), logical px
 uniform vec2  srcSize;     // the monitor the backdrop texture covers, logical px
 uniform vec2  srcOffset;   // the widget's top-left on that monitor, logical px
@@ -110,17 +136,22 @@ uniform float radius;
 uniform float bezel;
 uniform float thickness;
 uniform float dispersion;
+uniform float ior;
 uniform float blurPx;
 uniform float tintMix;
 uniform vec3  tintColor;
 uniform float saturation;
+uniform float milk;
 uniform float dark;
 uniform float rim;
+uniform float rimWidth;
+uniform vec2  lightDir;    // unit vector toward the light, y down
+uniform float depth;
 uniform float grain;
 uniform float magnify;
 uniform float ringW;
+uniform int   taps;
 
-const int   TAPS   = 24;
 const float GOLDEN = 2.39996323;
 
 vec3 backdropLod(vec2 p, float lod) {
@@ -131,15 +162,17 @@ vec3 backdropLod(vec2 p, float lod) {
 float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
 
 vec3 blurredDisp(vec2 p, vec2 disp, float disperse, float rad) {
+    float N   = float(taps);
     float R   = max(rad, 0.5) * 1.5;
-    float gap = R * sqrt(3.14159265 / float(TAPS));
+    float gap = R * sqrt(3.14159265 / N);
     float lod = clamp(log2(max(gap, 1.0)) + 0.35, 0.0, 8.0);
     float rot = ign(gl_FragCoord.xy) * 6.2831853;
     vec3  acc = vec3(0.0);
     float wsum = 0.0;
-    for (int i = 0; i < TAPS; ++i) {
+    for (int i = 0; i < 24; ++i) {
+        if (i >= taps) break;
         float fi = float(i) + 0.5;
-        float r  = sqrt(fi / float(TAPS));
+        float r  = sqrt(fi / N);
         float a  = fi * GOLDEN + rot;
         float w  = exp(-2.2 * r * r);
         vec2  o  = vec2(cos(a), sin(a)) * r * R;
@@ -191,54 +224,68 @@ void main() {
     slope = min(slope, 7.0);
     vec3 n = normalize(vec3(g * slope, 1.0));
 
-    // refraction: glass n ~ 1.5, the ray enters straight down
-    vec3 rd   = refract(vec3(0.0, 0.0, -1.0), n, 1.0 / 1.5);
-    vec2 disp = rd.xy / max(-rd.z, 0.2) * thickness * 1.35;
+    vec3  col;
+    float a = 1.0;
+    if (live < 0.5 && hasTex > 0.5) {
+        // refraction: the ray enters straight down and bends through the curved surface
+        vec3 rd   = refract(vec3(0.0, 0.0, -1.0), n, 1.0 / ior);
+        vec2 disp = rd.xy / max(-rd.z, 0.2) * thickness * 1.35;
+        vec2 ps   = vec2(p.x, (p.y - hs.y) * (1.0 - magnify * 1.5) + hs.y);
+        float rad = blurPx * mix(0.45, 1.0, smoothstep(0.0, bz, t));
+        col = blurredDisp(ps, disp, dispersion * 0.6, rad);
+        float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        col = mix(vec3(l), col, saturation);
+        col = mix(col, tintColor, tintMix);
+    } else {
+        // see-through (or the wallpaper isn't loaded yet): a tinted body; the compositor blurs what's behind
+        col = tintColor;
+        if (live > 0.5) {
+            a = opacity;
+            // thick glass: the curved rim hides more of what's behind it
+            a += (1.0 - a) * 0.45 * min(depth, 2.0) * 0.5 * (1.0 - u) * (1.0 - u);
+        }
+    }
 
-    // the slab is a gentle vertical lens; the blur is crisper right at the curved rim
-    vec2 ps = vec2(p.x, (p.y - hs.y) * (1.0 - magnify * 1.5) + hs.y);
-    float rad = blurPx * mix(0.45, 1.0, smoothstep(0.0, bz, t));
-    vec3 col = blurredDisp(ps, disp, dispersion * 0.6, rad);
+    // milky lift, soft sheen on the lit side, darker on the far inner edge, absorption toward the edge
+    vec2  L  = normalize(lightDir);
+    col += mix(0.055, 0.020, dark) * milk;
+    float lit = clamp(dot(q / max(hs, vec2(1.0)), L) * 0.5 + 0.5, 0.0, 1.0);
+    col += lit * mix(0.040, 0.030, dark) * milk;
+    col *= 1.0 - 0.12 * depth * exp(-t / 6.0) * clamp(-dot(g, L), 0.0, 1.0);
+    col *= 1.0 - 0.10 * depth * exp(-t / (bz * 0.45));
+    col = clamp(col, 0.0, 1.0);
 
-    // colour: vibrancy, theme tint, milky lift
-    float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
-    col = mix(vec3(l), col, saturation);
-    col = mix(col, tintColor, tintMix);
-    col += mix(0.055, 0.020, dark);
-
-    // depth: soft top sheen, darker lower inner edge, thick glass absorbs toward the edge
-    float ty = clamp(p.y / glassSize.y, 0.0, 1.0);
-    col += (1.0 - ty) * mix(0.040, 0.030, dark);
-    col *= 1.0 - 0.12 * exp(-t / 6.0) * clamp(g.y, 0.0, 1.0);
-    col *= 1.0 - 0.10 * exp(-t / (bz * 0.45));
-
+    vec3 P = col * a;                 // premultiplied from here on
+    float A = a;
     vec3 rimCol = vec3(0.96, 0.98, 1.0);
 
-    // specular rim, light from the top-left
-    vec2  L      = normalize(vec2(-0.55, -0.83));
+    // specular rim
     float facing = dot(g, L);
     float spec   = pow(max(facing, 0.0), 1.6) + 0.55 * pow(max(-facing, 0.0), 2.2);
-    float hair   = exp(-t / 1.1);
-    float wide   = exp(-t / 5.0);
+    float hair   = exp(-t / (1.1 * rimWidth));
+    float wide   = exp(-t / (5.0 * rimWidth));
     float edgeHi = hair * (0.18 + 0.78 * spec) + wide * 0.10 * (0.30 + spec);
     edgeHi *= rim * mix(0.85, 1.0, dark);
-    col += edgeHi * rimCol;
-
     // meniscus: a soft second highlight inside the rim
     float mx  = (t - bz * 0.5) / (bz * 0.2 + 1.0);
-    float men = exp(-mx * mx);
-    col += men * 0.07 * (0.35 + spec) * rim * rimCol;
+    float men = exp(-mx * mx) * 0.07 * (0.35 + spec) * rim;
+    float light = edgeHi + men;
+    P += light * rimCol;
+    A = max(A, clamp(light, 0.0, 1.0));
 
     if (ringW > 0.0) {
-        float ring = 1.0 - smoothstep(ringW * 0.5, ringW * 0.5 + 1.0, t);
-        col = mix(col, rimCol, ring * (0.55 + 0.35 * clamp(facing * 0.5 + 0.5, 0.0, 1.0)) * min(rim, 1.0));
+        float ring = (1.0 - smoothstep(ringW * 0.5, ringW * 0.5 + 1.0, t))
+                   * (0.55 + 0.35 * clamp(facing * 0.5 + 0.5, 0.0, 1.0)) * min(rim, 1.0);
+        P = mix(P, rimCol, ring);
+        A = mix(A, 1.0, ring);
     }
 
     float gn = hash12(gl_FragCoord.xy) + hash12(gl_FragCoord.xy * 1.7 + 17.0) - 1.0;
-    col += gn * grain;
+    P += gn * grain * A;
 
-    col = clamp(col, 0.0, 1.0);
-    fragColor = vec4(col * cov, cov);    // premultiplied
+    A = clamp(A, 0.0, 1.0);
+    P = clamp(P, 0.0, 1.0);
+    fragColor = vec4(P * cov, A * cov);
 }
 """
 

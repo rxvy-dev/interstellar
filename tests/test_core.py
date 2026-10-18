@@ -146,6 +146,19 @@ class LiquidGlass(unittest.TestCase):
         self.assertEqual(liquid.shader_params(s, themes.BUILTIN[0], maximized=True)["radius"], 0.0)
         self.assertEqual(len(p["tintColor"]), 3)
 
+    def test_modes_and_new_knobs(self):
+        from interstellar import liquid
+        s = dict(settings.DEFAULTS)
+        self.assertTrue(liquid.is_live(s))                    # see-through is the default
+        p = liquid.shader_params(s, themes.BUILTIN[0])
+        self.assertEqual(p["live"], 1.0)
+        self.assertAlmostEqual(p["lightDir"][0] ** 2 + p["lightDir"][1] ** 2, 1.0)
+        self.assertEqual(p["taps"], liquid.QUALITY_TAPS["balanced"])
+        s.update(glass_mode="wallpaper", glass_quality="best", glass_light_angle=90, glass_ior=9)
+        p = liquid.shader_params(s, themes.BUILTIN[0])
+        self.assertEqual((p["live"], p["taps"], p["ior"]), (0.0, 24, 2.5))
+        self.assertAlmostEqual(p["lightDir"][0], 1.0)         # 90° = light from the right
+
     def test_shader_sources(self):
         from interstellar import liquid
         for es in (False, True):

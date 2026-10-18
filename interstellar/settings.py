@@ -23,13 +23,22 @@ DEFAULTS = {
     "background_dim": 0.65,
     "ui_style": "glass",           # glass | solid | minimal | liquid
     # Liquid Glass (ui_style "liquid", or any Liquid theme) — ranges live in liquid.GLASS_KEYS
-    "glass_frost": 0.5,            # backdrop blur
+    "glass_mode": "live",          # live: see the windows behind | wallpaper: refract the wallpaper
+    "glass_quality": "balanced",   # fast | balanced | best (wallpaper mode blur samples)
+    "glass_frost": 0.5,            # wallpaper-mode blur
     "glass_refraction": 1.0,       # how hard the curved rim bends the backdrop
     "glass_edge": 26,              # width of the curved rim, px
     "glass_dispersion": 1.0,       # rainbow split at the rim
+    "glass_ior": 1.5,              # index of refraction
     "glass_tint": 0.45,            # theme-colour tint over the glass (readability)
+    "glass_opacity": 0.55,         # see-through mode: how much the glass hides what's behind
     "glass_vibrancy": 1.3,         # backdrop saturation
+    "glass_milk": 1.0,             # milky brightness lift
     "glass_rim": 0.7,              # specular edge highlight
+    "glass_rim_width": 1.0,        # how far the highlight spreads in from the edge
+    "glass_light_angle": 326,      # light direction, degrees clockwise from the top
+    "glass_depth": 1.0,            # inner shadow / thickness toward the edges
+    "glass_border": 1.0,           # thin bright border, px
     "glass_lens": 0.3,             # whole-window magnifying lens
     "glass_grain": 0.3,            # fine noise
     "glass_radius": 16,            # corner radius, px
