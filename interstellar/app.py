@@ -28,6 +28,8 @@ def parse_args(argv):
     p.add_argument("--tab", action="store_true", help="open a tab in the existing window instead of a new window")
     p.add_argument("--quake", action="store_true", help="toggle the drop-down (quake) terminal")
     p.add_argument("--no-restore", action="store_true", help="don't restore the last session")
+    p.add_argument("--daemon", action="store_true",
+                   help="start in the background without a window, so the first window opens instantly")
     p.add_argument("--preferences", action="store_true", help="open preferences")
     p.add_argument("--theme", help="use this theme (and remember it)")
     p.add_argument("--list-themes", action="store_true")
@@ -48,6 +50,7 @@ class App(Gtk.Application):
         self._preview = None
         self.css = None
         self.restored = False
+        self._held = False
 
     # ------------------------------------------------------------------ theme / css
     def theme_name(self):
@@ -80,6 +83,8 @@ class App(Gtk.Application):
             w.apply_settings("theme")
 
     def on_setting(self, key):
+        if key in ("background", "*"):
+            self.set_background(bool(self.s["background"]))
         if key in ("theme", "ui_style", "opacity", "custom_css", "padding", "glass_radius", "glass_shadow", "*"):
             self.apply_css()
         for w in self.all_windows():
@@ -105,7 +110,35 @@ class App(Gtk.Application):
             act = Gio.SimpleAction.new(name, None)
             act.connect("activate", lambda *_a, f=fn: f())
             self.add_action(act)
+        # what the launcher's fast path calls over D-Bus when Interstellar is already running
+        a = Gio.SimpleAction.new("open", GLib.VariantType.new("s"))
+        a.connect("activate", lambda _a, v: self.open_window(v.get_string() or None))
+        self.add_action(a)
+        self.set_background(bool(self.s["background"]))
         GLib.timeout_add_seconds(20, self._autosave)
+
+    def set_background(self, on):
+        """Stay alive with no windows open, so the next window skips Python + GTK start-up."""
+        if on and not self._held:
+            self.hold()
+            self._held = True
+        elif not on and self._held:
+            self._held = False
+            self.release()
+
+    def open_window(self, cwd=None):
+        """A plain `interstellar`: the last session the first time, a new window after that."""
+        live = [w for w in self.windows_ if w.get_visible()]
+        if not live and not self.restored and self.s["restore_session"] and self.s["session"]:
+            self.restored = True
+            for ws in self.s["session"]:
+                w = self.new_window(restore=ws.get("tabs") or None)
+                cur = ws.get("current", 0)
+                if 0 <= cur < len(w.tabs):
+                    w.select_tab(w.tabs[cur])
+            return
+        self.restored = True
+        self.new_window(cwd=cwd if cwd and os.path.isdir(cwd) else None)
 
     def do_command_line(self, cmdline):
         argv = cmdline.get_arguments()[1:]
@@ -140,6 +173,9 @@ class App(Gtk.Application):
             return 0
         if a.preferences:
             self.show_prefs()
+            return 0
+        if a.daemon:
+            self.set_background(True)
             return 0
         profile = self.s.profile(a.profile) if a.profile else None
         argv_cmd = None
@@ -209,6 +245,7 @@ class App(Gtk.Application):
 
     def quit_all(self):
         self.save_session()
+        self.set_background(False)     # Quit really quits, even when running in the background
         for w in list(self.all_windows()):
             w._really_close = True
             w.close()

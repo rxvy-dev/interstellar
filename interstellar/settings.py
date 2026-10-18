@@ -44,6 +44,7 @@ DEFAULTS = {
     "confirm_close": True,
     "new_tab_cwd": True,           # open new tabs/splits in the current folder
     "restore_session": True,
+    "background": True,            # keep running after the last window closes: new windows open instantly
     "width": 1100, "height": 680,
     "quake_height": 0.45,
     # behaviour

@@ -821,7 +821,12 @@ class Prefs(Gtk.Window):
 
     # ---------------------------------------------------------------- behaviour
     def _page_behaviour(self):
-        pg = self._page("Behaviour", "Scrolling, the clipboard, links, bells and notifications.")
+        pg = self._page("Behaviour", "Start-up, scrolling, the clipboard, links, bells and notifications.")
+        c = self._group(pg, "Start-up")
+        self._row(c, "behaviour", "Keep running in the background",
+                  "Interstellar stays loaded after you close the last window, so new windows open instantly "
+                  "(Menu → Quit still quits). Start it at login with `interstellar --daemon` and even the first "
+                  "window is instant.", self._switch("background"))
         c = self._group(pg, "Scrolling")
         sb = Gtk.Box(spacing=6)
         sp = Gtk.SpinButton.new_with_range(0, 1000000, 1000)

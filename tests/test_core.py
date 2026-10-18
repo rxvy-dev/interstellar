@@ -169,6 +169,25 @@ class LiquidGlass(unittest.TestCase):
         self.assertAlmostEqual(x * 2 + cw, 4000, places=3)
 
 
+class Startup(unittest.TestCase):
+    def test_background_and_daemon(self):
+        self.assertTrue(settings.DEFAULTS["background"])
+        try:
+            from interstellar.app import parse_args
+        except (ImportError, ValueError):
+            self.skipTest("GTK not installed")
+        self.assertTrue(parse_args(["--daemon"]).daemon)
+        self.assertFalse(parse_args([]).daemon)
+
+    def test_launcher_fast_path(self):
+        root = os.path.join(os.path.dirname(__file__), "..", "bin")
+        with open(os.path.join(root, "interstellar")) as a, open(os.path.join(root, "istl")) as b:
+            ia, ib = a.read(), b.read()
+        self.assertEqual(ia, ib, "bin/istl must stay a copy of bin/interstellar")
+        self.assertIn("org.gtk.Actions.Activate", ia)
+        self.assertIn("open \"[<'$cwd'>]\"", ia)
+
+
 class PureLogic(unittest.TestCase):
     """Bits that import GTK modules but need no display."""
 

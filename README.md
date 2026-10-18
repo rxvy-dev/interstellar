@@ -120,6 +120,18 @@ The glass shows your wallpaper, not the windows behind it (like macOS). On Hyprl
 - **New tabs open in the folder you're in.**
 - **Tab icons and dots:** a ▶ icon means a program is running, a coloured dot means a background tab has new output, and a green dot means a long command finished.
 
+### Opens instantly
+Interstellar keeps running in the background after you close the last window, so the next one opens straight away: the launcher asks the running copy for a window over D-Bus instead of starting Python and GTK again. Start it at login with `interstellar --daemon` and even the first window is instant. You can switch this off in *Preferences → Behaviour*, and *Menu → Quit* always quits.
+
+```lua
+-- Hyprland (Lua config)
+hl.on("hyprland.start", function() hl.exec_cmd("interstellar --daemon") end)
+```
+```ini
+# Hyprland (hyprland.conf)
+exec-once = interstellar --daemon
+```
+
 ### Small things that save time
 ![Command palette](docs/palette.png)
 
@@ -175,6 +187,7 @@ interstellar --theme "Deep Space"    # switch theme (and keep it)
 interstellar --list-themes
 interstellar --import-theme ~/Downloads/gruvbox.toml
 interstellar --quake                 # toggle the drop-down terminal
+interstellar --daemon                # start in the background at login: every window opens instantly
 interstellar --fetch                 # (or: istl fetch) space-themed system info
 interstellar --doctor                # check dependencies
 interstellar --update | --uninstall | --version | --help

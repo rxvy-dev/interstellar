@@ -4,9 +4,20 @@
 #   interstellar -e htop            run a command
 #   interstellar -d ~/code --tab    open a tab in the running window
 #   interstellar --quake            toggle the drop-down terminal (bind this to a key, e.g. F12)
+#   interstellar --daemon           start in the background at login, so every window opens instantly
 #   interstellar --doctor           check that everything is installed
 #   interstellar --fetch            space-themed system info (also: istl fetch)
 #   interstellar --update / --uninstall / --version / --help
+# Fast path: if Interstellar is already running (it stays in the background by default), ask it for a
+# window over D-Bus. That skips starting Python and GTK, so the window appears instantly.
+if [ $# -eq 0 ] && [ -z "$INTERSTELLAR_NO_FAST" ] && command -v gdbus >/dev/null 2>&1; then
+  cwd=$(printf '%s' "$PWD" | sed -e 's/\\/\\\\/g' -e "s/'/\\\\'/g")
+  pd="{}"
+  [ -n "$XDG_ACTIVATION_TOKEN" ] && pd="{'activation-token': <'$XDG_ACTIVATION_TOKEN'>}"
+  gdbus call --session --timeout 2 --dest io.github.interstellar.Terminal \
+    --object-path /io/github/interstellar/Terminal --method org.gtk.Actions.Activate \
+    open "[<'$cwd'>]" "$pd" >/dev/null 2>&1 && exit 0
+fi
 HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 PY="$INTERSTELLAR_PYTHON"
 if [ -z "$PY" ]; then
