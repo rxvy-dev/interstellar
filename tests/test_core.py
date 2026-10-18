@@ -106,13 +106,99 @@ class KeysTest(unittest.TestCase):
 class CssTest(unittest.TestCase):
     def test_builds_for_every_theme_and_style(self):
         for t in themes.BUILTIN:
-            for style in ("glass", "solid", "minimal"):
-                css = build_css(t, style, 0.9)
+            for style in ("glass", "solid", "minimal", "liquid"):
+                css = build_css(t, style, 0.9, glass={"radius": 14, "shadow": 0.4})
                 self.assertIn(".istl-tab", css)
                 self.assertEqual(css.count("{"), css.count("}"))
 
     def test_mix(self):
         self.assertEqual(mix("#000000", "#ffffff", 0.5), "#808080")
+
+
+class LiquidGlass(unittest.TestCase):
+    def test_defaults_match_settings(self):
+        from interstellar import liquid
+        for k, v in liquid.GLASS_DEFAULTS.items():
+            self.assertIn(k, settings.DEFAULTS, k)
+            self.assertEqual(settings.DEFAULTS[k], v, k)
+        for k, (d, lo, hi) in liquid.GLASS_KEYS.items():
+            self.assertTrue(lo <= d <= hi, k)
+
+    def test_liquid_themes_switch_style(self):
+        from interstellar import liquid
+        lt = [t for t in themes.BUILTIN if t.get("liquid")]
+        self.assertGreaterEqual(len(lt), 3)
+        self.assertEqual(liquid.effective_style("glass", lt[0]), "liquid")
+        self.assertEqual(liquid.effective_style("solid", themes.BUILTIN[0]), "solid")
+        self.assertEqual(liquid.effective_style("liquid", themes.BUILTIN[0]), "liquid")
+        self.assertIn("window.istl.liquid", build_css(lt[0], "liquid"))
+        self.assertNotIn("window.istl.liquid", build_css(themes.BUILTIN[0], "glass"))
+
+    def test_shader_params_are_clamped(self):
+        from interstellar import liquid
+        s = dict(settings.DEFAULTS)
+        s.update(glass_frost=5, glass_refraction=-2, glass_radius="x", glass_tone="light")
+        p = liquid.shader_params(s, themes.BUILTIN[0])
+        self.assertAlmostEqual(p["blurPx"], 1.5 + 34.0)
+        self.assertEqual(p["thickness"], 0.0)
+        self.assertEqual(p["radius"], liquid.GLASS_DEFAULTS["glass_radius"])
+        self.assertEqual(p["dark"], 0.0)
+        self.assertEqual(liquid.shader_params(s, themes.BUILTIN[0], maximized=True)["radius"], 0.0)
+        self.assertEqual(len(p["tintColor"]), 3)
+
+    def test_modes_and_new_knobs(self):
+        from interstellar import liquid
+        s = dict(settings.DEFAULTS)
+        self.assertTrue(liquid.is_live(s))                    # see-through is the default
+        p = liquid.shader_params(s, themes.BUILTIN[0])
+        self.assertEqual(p["live"], 1.0)
+        self.assertAlmostEqual(p["lightDir"][0] ** 2 + p["lightDir"][1] ** 2, 1.0)
+        self.assertEqual(p["taps"], liquid.QUALITY_TAPS["balanced"])
+        s.update(glass_mode="wallpaper", glass_quality="best", glass_light_angle=90, glass_ior=9)
+        p = liquid.shader_params(s, themes.BUILTIN[0])
+        self.assertEqual((p["live"], p["taps"], p["ior"]), (0.0, 24, 2.5))
+        self.assertAlmostEqual(p["lightDir"][0], 1.0)         # 90° = light from the right
+
+    def test_shader_sources(self):
+        from interstellar import liquid
+        for es in (False, True):
+            vs, fs = liquid.shader_sources(es)
+            self.assertTrue(vs.startswith("#version"))
+            self.assertIn("fragColor", fs)
+            self.assertEqual(fs.count("{"), fs.count("}"))
+            for u in ("glassSize", "srcOffset", "blurPx", "tintColor", "dispersion"):
+                self.assertRegex(fs, r"uniform\s+\w+\s+" + u + ";")
+
+    def test_wallpaper_parsing_and_maths(self):
+        from interstellar import liquid
+        out = "DP-1\t/a.png\nHDMI-A-1\t/missing.png\n*\t/b.jpg\nnot a line\n"
+        m = liquid.parse_wallpapers(out, exists=lambda p: p != "/missing.png")
+        self.assertEqual(m, {"DP-1": "/a.png", "*": "/a.png"})
+        name, x, y, w, h = liquid.monitor_logical({"name": "DP-1", "x": 2560, "y": 0, "width": 3840,
+                                                   "height": 2160, "scale": 1.5, "transform": 1})
+        self.assertEqual((name, x, w, h), ("DP-1", 2560.0, 1440.0, 2560.0))
+        x, y, cw, ch = liquid.cover_rect(4000, 2000, 1920, 1080)
+        self.assertAlmostEqual(cw / ch, 1920 / 1080, places=3)
+        self.assertAlmostEqual(x * 2 + cw, 4000, places=3)
+
+
+class Startup(unittest.TestCase):
+    def test_background_and_daemon(self):
+        self.assertTrue(settings.DEFAULTS["background"])
+        try:
+            from interstellar.app import parse_args
+        except (ImportError, ValueError):
+            self.skipTest("GTK not installed")
+        self.assertTrue(parse_args(["--daemon"]).daemon)
+        self.assertFalse(parse_args([]).daemon)
+
+    def test_launcher_fast_path(self):
+        root = os.path.join(os.path.dirname(__file__), "..", "bin")
+        with open(os.path.join(root, "interstellar")) as a, open(os.path.join(root, "istl")) as b:
+            ia, ib = a.read(), b.read()
+        self.assertEqual(ia, ib, "bin/istl must stay a copy of bin/interstellar")
+        self.assertIn("org.gtk.Actions.Activate", ia)
+        self.assertIn("open \"[<'$cwd'>]\"", ia)
 
 
 class PureLogic(unittest.TestCase):

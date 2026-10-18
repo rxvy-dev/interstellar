@@ -18,7 +18,7 @@ Recommends:     jetbrains-mono-fonts
 %endif
 
 %description
-GTK 4 + VTE terminal with tabs, split panes, an animated starfield, 25 themes,
+GTK 4 + VTE terminal with tabs, split panes, an animated starfield, Liquid Glass, 28 themes,
 a theme studio, a command palette, quick-select hints, safe paste, session
 restore, a drop-down mode and a GUI for every setting.
 

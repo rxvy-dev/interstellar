@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+- **Liquid Glass:** a new window style that turns the window into curved glass with a rim highlight and the starfield drifting inside. *See-through* mode (default) shows the windows behind it through your compositor's blur; *Wallpaper* mode refracts your wallpaper
+- Three Liquid themes: Liquid Glass, Liquid Glass Light and Liquid Nebula (◈ filter in the theme gallery)
+- *Preferences → Liquid Glass*: mode, opacity, frost, tint, vibrancy, milkiness, depth, grain, edge width, refraction, index of refraction, chromatic dispersion, lens, border, rim light, highlight width, light direction, corner radius, shadow, tone, quality, stars on glass, wallpaper, and Clear / Liquid / Frosted / Smoked presets
+- The wallpaper is decoded on a background thread at the size it's needed and cached on disk, so windows never wait for it
+- Wallpaper auto-detection (swww, awww, hyprpaper, waypaper, swaybg) and live window tracking on Hyprland
+- OpenGL rendering through libepoxy (no new dependencies) with a cairo fallback
+- The refraction shader is adapted from MacShell's Liquid Glass by Rickky (MIT)
+- **Instant windows:** Interstellar stays running in the background after the last window closes (*Preferences → Behaviour*), and the launcher asks the running copy for a window over D-Bus instead of starting Python and GTK again
+- `interstellar --daemon` starts it at login without a window, so even the first window is instant
+
 ## 1.0.0
 First release of Interstellar Terminal.
 

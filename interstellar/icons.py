@@ -168,12 +168,24 @@ def _zoom(cr):
     _p(cr, [(20, 15), (20, 20), (15, 20)]); _p(cr, [(9, 20), (4, 20), (4, 15)]); cr.stroke()
 
 
+def _glass(cr):
+    # a droplet with a highlight: Liquid Glass
+    cr.move_to(12, 3.5)
+    cr.curve_to(12, 3.5, 5.5, 10.5, 5.5, 14.5)
+    cr.curve_to(5.5, 18.2, 8.4, 20.5, 12, 20.5)
+    cr.curve_to(15.6, 20.5, 18.5, 18.2, 18.5, 14.5)
+    cr.curve_to(18.5, 10.5, 12, 3.5, 12, 3.5)
+    cr.close_path()
+    cr.stroke()
+    cr.new_sub_path(); cr.arc(12, 14.5, 3.6, math.radians(150), math.radians(230)); cr.stroke()
+
+
 ICONS = {"plus": _plus, "down": _down, "up": _up, "close": _close, "search": _search, "menu": _menu,
          "planet": _planet, "star": _star, "sparkle": _sparkle, "terminal": _terminal, "prompt": _prompt,
          "grid": _grid, "split-h": _split_h, "split-v": _split_v, "broadcast": _broadcast, "play": _play,
          "settings": _gear, "check": _check, "bolt": _bolt, "tab": _tab, "palette": _palette,
          "keyboard": _keyboard, "image": _image, "profile": _profile, "code": _code, "brush": _brush,
-         "zoom": _zoom}
+         "zoom": _zoom, "glass": _glass}
 
 
 def draw_icon(cr, name, size, rgba, width=1.8):

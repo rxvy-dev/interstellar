@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">Interstellar Terminal</h1>
 <p align="center"><b>A terminal that's out of this world.</b><br>
-Tabs, splits, 25 themes, an animated starfield, and a settings window for every option.</p>
+Tabs, splits, 28 themes, Liquid Glass, an animated starfield, and a settings window for every option.</p>
 <p align="center">
   <img alt="GTK 4" src="https://img.shields.io/badge/GTK-4-ffb347?style=flat-square">
   <img alt="VTE" src="https://img.shields.io/badge/engine-VTE-ffb347?style=flat-square">
@@ -73,37 +73,48 @@ If you don't want to install it, run it from the folder with `./bin/interstellar
 ### Space, but useful
 - **Animated starfield:** parallax stars drift behind your text, with the odd shooting star. It's drawn once behind the whole window, so it flows across split panes. You can set it to Drift, Twinkle or Still (Still uses no CPU), and choose the density. Toggle it with `Ctrl+Shift+F11`.
 - **Space themes:** Event Horizon (the default), Nebula, Supernova, Red Giant, Deep Space, Andromeda, Pulsar and Aurora, plus the classics: Dracula, Catppuccin, Tokyo Night, Gruvbox, Nord, One Dark, Rosé Pine, Kanagawa, Everforest, Solarized, Monokai, GitHub, Matrix and Amber CRT.
-- **Background images** with adjustable dimming, **window transparency**, and three window styles: Glass, Solid and Minimal.
+- **Background images** with adjustable dimming, **window transparency**, and four window styles: Glass, Solid, Minimal and [Liquid Glass](#liquid-glass).
 - **`istl fetch`** prints a space-themed system summary, so your screenshots look good too.
 
 | Nebula | Aurora |
 |---|---|
 | ![Nebula theme](docs/nebula.png) | ![Aurora theme](docs/aurora.png) |
 
-### Customize everything, with a GUI
-| Theme gallery: hover to preview, click to keep | Theme Studio |
-|---|---|
-| ![Theme gallery](docs/prefs-themes.png) | ![Theme studio](docs/prefs-studio.png) |
+### Liquid Glass
+![The Liquid Glass theme refracting a wallpaper](docs/liquid-glass.png)
 
-- **Theme gallery:** hover over a theme to preview it on your real terminals, and click to keep it. You can filter by Space / Dark / Light / Custom, or click *Surprise me*.
-- **Theme Studio:** start from any theme and change any of its 21 colours with a live preview. Save it, export it as JSON to share, and swap light/dark in one click.
-- **Import** themes from **kitty**, **Alacritty** (TOML or YAML) and **base16**. Use Preferences, or run `interstellar --import-theme file`.
-- **Fonts:** pick from a list of your installed monospace fonts, and set the size, line height and letter spacing. If a font is missing, Interstellar picks another one automatically.
-- **Cursor:** block, beam or underline, blinking or not, in any colour.
-- **Window:** padding, opacity, tab bar on top or bottom, and hide the tab bar when there's only one tab.
-- **Profiles:** give a shell or program its own folder, theme, font and environment variables. For example, a *Prod* profile with a red theme, or a *Python* profile that opens `python3`. Open one from the ▾ next to +.
-- **Keyboard:** rebind any shortcut by clicking it and pressing the new keys. If the keys are already used elsewhere, Interstellar tells you and removes the old binding.
-- **Custom CSS** if you want to restyle the window chrome itself.
-- **Search** across all settings, plus import / export / reset.
+The whole window becomes a slab of curved glass, lit along its rim, with the starfield drifting inside it. There are two modes:
 
-### Tabs and splits that just work
-- **Split** right `Ctrl+Shift+D` or down `Ctrl+Shift+E`, as deep as you like. Move between panes with `Alt+←↑→↓`.
-- **Zoom** a pane to full size with `Ctrl+Shift+Z`. Press it again to show all panes.
-- **Broadcast input** (`Ctrl+Shift+I`) types into every pane of a tab at once. It's handy for running the same command on several servers.
-- **Tabs:** drag to reorder, double-click to rename, middle-click to close. Right-click a tab to duplicate it, move it to a new window or close the others. Scroll on the tab bar to switch tabs, or use `Alt+1…9`.
-- **Session restore:** every tab, split layout, folder and tab name comes back when you reopen Interstellar.
-- **New tabs open in the folder you're in.**
-- **Tab icons and dots:** a ▶ icon means a program is running, a coloured dot means a background tab has new output, and a green dot means a long command finished.
+- **See-through** (default): you see the real windows behind the terminal, blurred by your compositor (on Hyprland that's `decoration:blur`, which is on by default). Interstellar adds the tint, depth, rim light and border.
+- **Wallpaper**: Interstellar refracts your wallpaper itself. The edge bends and splits the light like real glass and the middle frosts it. The wallpaper is found automatically from swww, awww, hyprpaper, waypaper or swaybg, or you can choose a picture. With none, a soft aurora in the theme's colours is used. On Hyprland the glass follows the window, so it bends the part of the wallpaper that's really behind it.
+
+How to use it:
+- **Themes:** pick **◈ Liquid Glass**, **◈ Liquid Glass Light** or **◈ Liquid Nebula**, or set *UI style → Liquid Glass* to turn any theme into glass (its background colour becomes the tint).
+- **Settings for everything** in *Preferences → Liquid Glass*:
+  - opacity, frost, tint, vibrancy, milkiness, depth, grain
+  - edge width, refraction, index of refraction, chromatic dispersion, lens, border
+  - rim light, highlight width, light direction, stars on the glass
+  - corner radius, shadow, tone, quality
+  - presets: *Clear*, *Liquid*, *Frosted* and *Smoked*
+
+  Every control applies live.
+- **Fast:** it's drawn with OpenGL and only re-renders when the window moves, resizes or a setting changes. The wallpaper is decoded on a background thread at the size it's needed and cached in `~/.cache/interstellar/glass`, so windows open without waiting for it. If OpenGL isn't available, a frosted-glass fallback is used.
+
+On Hyprland, set *Corner radius* to your `decoration:rounding` so the corners line up.
+
+![Liquid Glass preferences](docs/prefs-liquid-glass.png)
+
+### Opens instantly
+Interstellar keeps running in the background after you close the last window, so the next one opens straight away: the launcher asks the running copy for a window over D-Bus instead of starting Python and GTK again. Start it at login with `interstellar --daemon` and even the first window is instant. You can switch this off in *Preferences → Behaviour*, and *Menu → Quit* always quits.
+
+```lua
+-- Hyprland (Lua config)
+hl.on("hyprland.start", function() hl.exec_cmd("interstellar --daemon") end)
+```
+```ini
+# Hyprland (hyprland.conf)
+exec-once = interstellar --daemon
+```
 
 ### Small things that save time
 ![Command palette](docs/palette.png)
@@ -160,6 +171,7 @@ interstellar --theme "Deep Space"    # switch theme (and keep it)
 interstellar --list-themes
 interstellar --import-theme ~/Downloads/gruvbox.toml
 interstellar --quake                 # toggle the drop-down terminal
+interstellar --daemon                # start in the background at login: every window opens instantly
 interstellar --fetch                 # (or: istl fetch) space-themed system info
 interstellar --doctor                # check dependencies
 interstellar --update | --uninstall | --version | --help
@@ -224,3 +236,5 @@ Code map:
 
 ## License
 MIT
+
+The Liquid Glass refraction shader (`interstellar/liquid.py`) is adapted from MacShell's Liquid Glass by Rickky, also MIT licensed.

@@ -4,10 +4,11 @@ import os, time
 
 from gi.repository import Gtk, Gdk, Gio, GLib, GObject
 
-from . import keys, themes, NAME
+from . import keys, themes, liquid, NAME
 from .pane import Pane
 from . import icons
 from .starfield import Backdrop
+from .glass import GlassLayer
 
 
 class Tab:
@@ -64,10 +65,17 @@ class Window(Gtk.ApplicationWindow):
         self.set_icon_name("interstellar")
         self.set_default_size(int(self.s["width"]), int(self.s["height"]))
 
-        # ---- layout: backdrop (stars) under everything
+        # ---- layout: Liquid Glass (when on) under the backdrop (stars) under everything
         self.overlay = Gtk.Overlay()
+        self.bg = Gtk.Overlay(can_target=False, can_focus=False)
+        self.glass_holder = Gtk.Box(hexpand=True, vexpand=True, can_target=False)
+        self.bg.set_child(self.glass_holder)
         self.backdrop = Backdrop(self.s)
-        self.overlay.set_child(self.backdrop)
+        self.bg.add_overlay(self.backdrop)
+        self.overlay.set_child(self.bg)
+        self.glass = None
+        self.liquid = False
+        self._inline_hb = None
         self.main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.overlay.add_overlay(self.main)
         self.overlay.set_measure_overlay(self.main, True)
@@ -97,6 +105,7 @@ class Window(Gtk.ApplicationWindow):
 
         self._install_actions()
         self.backdrop.set_theme(themes.get(self.app.theme_name()))
+        self.apply_liquid(layout=False)
         self.apply_layout()
 
         if restore:
@@ -154,9 +163,39 @@ class Window(Gtk.ApplicationWindow):
         self.bottom_holder = Gtk.Box()
         self._refresh_profile_menu()
 
+    def apply_liquid(self, layout=True):
+        """Liquid Glass on/off: the glass layer under the stars, the title bar moved onto the glass."""
+        th = themes.get(self.app.theme_name())
+        on = liquid.is_liquid(self.s["ui_style"], th)
+        if on and self.glass is None:
+            self.glass = GlassLayer(self)
+            self.glass_holder.append(self.glass)
+        elif not on and self.glass is not None:
+            self.glass.shutdown()
+            self.glass_holder.remove(self.glass)
+            self.glass = None
+        changed = on != self.liquid
+        self.liquid = on
+        self.backdrop.set_liquid(on)
+        if on:
+            self.add_css_class("liquid")
+        else:
+            self.remove_css_class("liquid")
+        if changed and layout:
+            self.apply_layout()
+        if self.glass is not None:
+            self.glass.refresh()
+
     def apply_layout(self):
-        """Tabs on top live in the title bar; at the bottom they sit under the terminal."""
+        """Tabs on top live in the title bar; at the bottom they sit under the terminal.
+        With Liquid Glass the title bar sits inside the window instead, so it is part of the glass."""
         bottom = self.s["tab_position"] == "bottom"
+        inline = self.liquid and not self.quake
+        if self.handle.get_parent() is self.main:
+            self.main.remove(self.handle)
+        if self._inline_hb is not None and self._inline_hb.get_parent() is self.main:
+            self.main.remove(self._inline_hb)
+        self._inline_hb = None
         parent = self.bar.get_parent()
         if isinstance(parent, Gtk.WindowHandle):
             parent.set_child(None)
@@ -174,12 +213,22 @@ class Window(Gtk.ApplicationWindow):
             hb.add_css_class("istl-bar")
             self.title_lbl = Gtk.Label(label=NAME)
             hb.set_title_widget(self.title_lbl)
-            self.set_titlebar(hb)
+            if inline:
+                self.set_titlebar(Gtk.Box())     # empty: keeps client-side decorations, no title bar
+                self.main.prepend(hb)
+                self._inline_hb = hb
+            else:
+                self.set_titlebar(hb)
         else:
             self.wctl.set_visible(True)
             self.title_lbl = None
-            self.handle.set_child(self.bar)
-            self.set_titlebar(self.handle)
+            if inline:
+                self.set_titlebar(Gtk.Box())
+                self.handle.set_child(self.bar)
+                self.main.prepend(self.handle)
+            else:
+                self.handle.set_child(self.bar)
+                self.set_titlebar(self.handle)
         self._update_tabstrip_visibility()
 
     def _main_menu(self):
@@ -972,6 +1021,14 @@ class Window(Gtk.ApplicationWindow):
     def apply_settings(self, key):
         if key in ("theme", "*"):
             self.backdrop.set_theme(themes.get(self.app.theme_name()))
+        if key in ("theme", "ui_style", "*"):
+            self.apply_liquid()
+        elif key.startswith("glass_") and self.glass is not None:
+            if key == "glass_follow":
+                self.glass._schedule()
+            self.glass.refresh()
+        if key in ("glass_stars", "starfield"):
+            self.backdrop.refresh()
         if key in ("starfield", "starfield_motion", "starfield_density", "opacity", "background_image",
                    "background_dim", "*"):
             self.backdrop.refresh()
@@ -1076,6 +1133,8 @@ class Window(Gtk.ApplicationWindow):
                 self.s.set_quiet("height", h)
         self.app.window_closing(self)
         GLib.source_remove(self._poll_id)
+        if self.glass is not None:
+            self.glass.shutdown()
         for t in self.tabs:
             for p in t.panes():
                 self._kill(p)

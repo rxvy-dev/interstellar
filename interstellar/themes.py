@@ -10,9 +10,12 @@ from .settings import CFG_DIR
 THEME_DIR = os.path.join(CFG_DIR, "themes")
 
 
-def T(name, fg, bg, cursor, sel, accent, pal, space=False):
-    return {"name": name, "fg": fg, "bg": bg, "cursor": cursor, "selection": sel, "accent": accent,
-            "palette": pal.split(), "space": space}
+def T(name, fg, bg, cursor, sel, accent, pal, space=False, liquid=False):
+    t = {"name": name, "fg": fg, "bg": bg, "cursor": cursor, "selection": sel, "accent": accent,
+         "palette": pal.split(), "space": space}
+    if liquid:
+        t["liquid"] = True        # turns the window into Liquid Glass; bg is the glass tint
+    return t
 
 
 BUILTIN = [
@@ -41,6 +44,16 @@ BUILTIN = [
     T("Aurora", "#dff7ee", "#03090b", "#5effc4", "#0f3a33", "#5effc4",
       "#0b171a #ff6b8b #5effc4 #f4e285 #6ec3ff #b18cff #3ee0e0 #c8e6dc "
       "#33484c #ff93a9 #9bffdc #f8ecaa #9ed8ff #cdb5ff #82f0f0 #ffffff", True),
+    # ---- Liquid Glass: the window becomes curved glass over your wallpaper
+    T("Liquid Glass", "#f4f6fb", "#10131a", "#ffffff", "#3b5a86", "#8cc8ff",
+      "#1c2029 #ff7a85 #74e8a6 #ffd479 #82b8ff #d3a6ff #6fe4ec #e2e6ee "
+      "#7a8396 #ff9aa2 #9cf2c2 #ffe3a3 #a9cfff #e3c4ff #9cf0f5 #ffffff", liquid=True),
+    T("Liquid Glass Light", "#14171f", "#f3f5fa", "#0a84ff", "#b4d4ff", "#0a84ff",
+      "#1d2129 #d1242f #1a7f45 #9a6700 #0a64d8 #8a3ffc #0b7f8c #6e7581 "
+      "#4d5562 #e5484d #2a9d5c #b8860b #2f7cf6 #a161ff #1497a3 #9ba3af", liquid=True),
+    T("Liquid Nebula", "#f3ecff", "#160d2b", "#ff8ae2", "#4a2a78", "#ff8ae2",
+      "#21163a #ff6f9c #85f5bc #ffdc85 #9a9bff #ff8ae2 #74f0ff #e3d9fb "
+      "#5d4c84 #ff94b6 #adffd3 #ffeaaa #babbff #ffaeea #a3f6ff #ffffff", True, liquid=True),
     # ---- classics
     T("Dracula", "#f8f8f2", "#282a36", "#f8f8f2", "#44475a", "#bd93f9",
       "#21222c #ff5555 #50fa7b #f1fa8c #bd93f9 #ff79c6 #8be9fd #f8f8f2 "
@@ -147,6 +160,8 @@ def save_custom(theme):
     os.makedirs(THEME_DIR, exist_ok=True)
     slug = re.sub(r"[^a-z0-9]+", "-", theme["name"].lower()).strip("-") or "theme"
     t = {k: theme[k] for k in ("name", "fg", "bg", "cursor", "selection", "accent", "palette")}
+    if theme.get("liquid"):
+        t["liquid"] = True
     with open(os.path.join(THEME_DIR, slug + ".json"), "w") as f:
         json.dump(t, f, indent=2)
     invalidate()
